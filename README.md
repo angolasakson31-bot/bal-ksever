@@ -10,6 +10,8 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
 - **Meraya dokun → ayrıntılı tahmin:** öneri metni (ne zaman, hangi tür, hangi yem/takım, rüzgara göre nereye atılır), türlere göre tahmin,
   grafikler (skor, rüzgar/hamle, dalga/soluğan veya yağış, hava/su sıcaklığı, basınç), ayrıntılı hava (hissedilen, nem, görüş, UV,
   dalga periyodu, akıntı, güneş ve ay doğuş/batış, solunar).
+- **Meraya basılı tut:** adını değiştir, sil, düzenle, av ekle, yol tarifi.
+- **Saat saat görsel hava:** her saat için hava simgesi (güneş, bulut, yağmur, gece), sıcaklık, yağmur ihtimali sütunu, rüzgar ok + hız + hamle; 7 günlük gün kartları (simge, en yüksek/en düşük, yağış, rüzgar).
 - **Haritada boş bir noktaya dokun:** o noktanın skoru ve özeti; tek dokunuşla ayrıntılı tahmin veya mera kaydı.
 - **Deniz ve tatlı su:** su tipi otomatik algılanır (deniz verisi varsa deniz, yoksa göl). Elle göl/baraj veya nehir/dere seçilebilir. Her su tipi için ayrı puanlama yapılır.
 - **İstatistik:** tür, saat, ay, yem ve meraya göre dağılım; rekorlar.
@@ -25,7 +27,7 @@ Puan 0–10 arasıdır. Ağırlıklar kanıtın gücüne göre verildi:
 4. **Yağış:** şimşek ve kuvvetli yağış kötü. Derede son 24 saatte çok yağış varsa su kabarık ve bulanık olur.
 5. **Basınç ve ay (solunar):** bilimsel kanıtı zayıf olduğu için düşük ağırlıkla eklendi.
 
-Veriler her açılışta Open-Meteo'dan çekilir. Tahminler saatlik güncellenir, uygulamayı güncellemek gerekmez.
+Veriler Open-Meteo'dan `best_match` ile çekilir: konuma göre en iyi hava modelleri (ECMWF, DWD ICON, Météo-France vb.) otomatik birleştirilir. Uygulama açıldığında, uygulamaya geri dönüldüğünde ve 10 dakikada bir yenilenir; ayrıntı ekranında elle yenileme düğmesi vardır.
 
 ## Telefona kurulum
 - **iPhone (Safari):** siteyi açın → Paylaş ⬆️ → *Ana Ekrana Ekle*

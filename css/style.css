@@ -323,3 +323,37 @@ button.hour.now { border-color: var(--primary); }
 .species-bars .sp-note { grid-column: 1 / -1; font-size: .72rem; color: var(--muted); margin: -2px 0 4px; }
 .advice p { margin: 0 0 8px; font-size: .92rem; line-height: 1.5; }
 .advice p:last-child { margin-bottom: 0; }
+
+/* Basılı tutma menüsü */
+.mk-wrap, .rank-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radius: 18px 18px 0 0; padding-bottom: calc(env(safe-area-inset-bottom) + 16px); }
+.rename-row { display: flex; gap: 8px; margin: 10px 0 14px; }
+.rename-row input { flex: 1; }
+.sheet-actions { display: flex; flex-direction: column; gap: 8px; }
+.sheet-actions .btn { text-align: left; padding: 12px 14px; }
+
+/* Detay: güncelleme, gün kartları, şu an kartı */
+.fresh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+.day-chips button { display: flex; flex-direction: column; align-items: center; gap: 1px; border-radius: 14px; padding: 6px 10px; min-width: 76px; }
+.day-chips .dn { font-weight: 600; font-size: .8rem; }
+.day-chips .di { font-size: 1.5rem; line-height: 1.2; }
+.day-chips .dt { font-size: .8rem; }
+.day-chips .dr { font-size: .68rem; opacity: .85; }
+.now-card { display: flex; align-items: center; gap: 12px; }
+.now-ico { font-size: 3rem; line-height: 1; }
+.now-main { flex: 1; min-width: 0; }
+.now-t { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+.now-t small { font-size: .8rem; font-weight: 500; color: var(--text-2); }
+.now-w { color: var(--text-2); font-size: .9rem; }
+.now-side { text-align: right; font-size: .88rem; }
+
+/* Saat saat hava şeridi */
+.wx-strip .wxh { width: 70px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; }
+.wxh .ico { font-size: 1.6rem; line-height: 1.2; }
+.wxh .t { font-weight: 700; font-size: .95rem; }
+.wxh .rain { width: 10px; height: 34px; background: var(--surface); border-radius: 4px; display: flex; align-items: flex-end; overflow: hidden; margin: 2px 0; }
+.wxh .rain span { display: block; width: 100%; background: var(--s1); border-radius: 4px 4px 0 0; }
+.wxh .rp { font-size: .68rem; color: var(--text-2); min-height: 1em; line-height: 1.2; font-weight: 600; }
+.wxh .w { font-size: .8rem; font-weight: 600; }
+.wxh .g { font-size: .66rem; color: var(--muted); }
+.wxh .sc { font-size: .8rem; margin-top: 2px; }
