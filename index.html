@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Rastgele</title>
+  <meta name="description" content="Kıyı balıkçıları için av günlüğü, mera haritası ve hava/deniz durumu.">
+  <meta name="theme-color" content="#0b3b5a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Rastgele">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="page-title">Avlarım</h1>
+    <span class="brand">🎣 Rastgele</span>
+  </header>
+
+  <div id="install-hint" class="install-hint" hidden>
+    <span id="install-text"></span>
+    <button id="install-btn" class="btn small" hidden>Yükle</button>
+    <button id="install-close" class="icon-btn" aria-label="Kapat">✕</button>
+  </div>
+
+  <main>
+    <!-- AVLAR -->
+    <section id="tab-catches" class="tab active" data-title="Avlarım">
+      <div class="filter-row">
+        <input id="catch-search" type="search" placeholder="Ara: tür, yem, mera…">
+      </div>
+      <div id="catch-list" class="catch-list"></div>
+    </section>
+
+    <!-- HARİTA -->
+    <section id="tab-map" class="tab" data-title="Mera Haritası">
+      <div id="map"></div>
+      <div class="map-tools">
+        <button id="map-locate" class="btn small">📍 Konumum</button>
+        <button id="map-add-spot" class="btn small primary">＋ Mera ekle</button>
+      </div>
+      <p class="map-hint">İpucu: Haritada bir yere uzun basarak (veya bilgisayarda çift tıklayarak) mera ekleyebilirsiniz.</p>
+    </section>
+
+    <!-- HAVA -->
+    <section id="tab-weather" class="tab" data-title="Hava & Deniz">
+      <div class="filter-row">
+        <select id="weather-place"></select>
+        <button id="weather-refresh" class="btn small">↻</button>
+      </div>
+      <div id="weather-content"></div>
+    </section>
+
+    <!-- İSTATİSTİK -->
+    <section id="tab-stats" class="tab" data-title="İstatistik">
+      <div id="stats-content"></div>
+    </section>
+
+    <!-- DAHA -->
+    <section id="tab-more" class="tab" data-title="Rehber & Ayarlar">
+      <div id="more-content"></div>
+    </section>
+  </main>
+
+  <button id="fab" class="fab" aria-label="Yeni av ekle">＋</button>
+
+  <nav class="bottom-nav">
+    <button data-tab="catches" class="active"><span>🐟</span>Avlar</button>
+    <button data-tab="map"><span>🗺️</span>Harita</button>
+    <button data-tab="weather"><span>🌊</span>Hava</button>
+    <button data-tab="stats"><span>📊</span>İstatistik</button>
+    <button data-tab="more"><span>📖</span>Rehber</button>
+  </nav>
+
+  <!-- Av ekle / düzenle -->
+  <dialog id="catch-dialog">
+    <form id="catch-form" method="dialog">
+      <h2 id="catch-dialog-title">Yeni Av</h2>
+
+      <label class="photo-pick">
+        <input type="file" id="catch-photo" accept="image/*" hidden>
+        <img id="catch-photo-preview" alt="" hidden>
+        <span id="catch-photo-label">📷 Fotoğraf ekle</span>
+      </label>
+
+      <label>Tür
+        <input id="catch-species" list="species-list" required placeholder="örn. Levrek">
+        <datalist id="species-list"></datalist>
+      </label>
+      <p id="catch-size-warning" class="warn" hidden></p>
+
+      <div class="row">
+        <label>Boy (cm)<input id="catch-length" type="number" inputmode="decimal" step="0.5" min="0"></label>
+        <label>Ağırlık (g)<input id="catch-weight" type="number" inputmode="numeric" step="10" min="0"></label>
+        <label>Adet<input id="catch-count" type="number" inputmode="numeric" min="1" value="1"></label>
+      </div>
+
+      <div class="row">
+        <label>Tarih & saat<input id="catch-date" type="datetime-local" required></label>
+      </div>
+
+      <label>Yem
+        <input id="catch-bait" list="bait-list" placeholder="örn. Karides">
+        <datalist id="bait-list"></datalist>
+      </label>
+      <label>Takım / yöntem
+        <input id="catch-method" list="method-list" placeholder="örn. LRF">
+        <datalist id="method-list"></datalist>
+      </label>
+
+      <label>Mera
+        <select id="catch-spot"><option value="">— Seçilmedi —</option></select>
+      </label>
+      <div class="row loc-row">
+        <button type="button" id="catch-use-location" class="btn small">📍 Şu anki konumu kaydet</button>
+        <span id="catch-location-text" class="muted"></span>
+      </div>
+
+      <label class="check"><input id="catch-released" type="checkbox"> Geri saldım</label>
+      <label>Not<textarea id="catch-notes" rows="2" placeholder="Rüzgar, su rengi, akıntı…"></textarea></label>
+
+      <div class="dialog-actions">
+        <button type="button" id="catch-delete" class="btn danger" hidden>Sil</button>
+        <span class="spacer"></span>
+        <button type="button" id="catch-cancel" class="btn">Vazgeç</button>
+        <button type="submit" class="btn primary">Kaydet</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Mera ekle / düzenle -->
+  <dialog id="spot-dialog">
+    <form id="spot-form" method="dialog">
+      <h2 id="spot-dialog-title">Yeni Mera</h2>
+      <label>Ad<input id="spot-name" required placeholder="örn. Moda İskelesi"></label>
+      <label>Tip
+        <select id="spot-type">
+          <option>İskele</option><option>Mendirek</option><option>Kayalık</option>
+          <option>Sahil / kumsal</option><option>Köprü</option><option>Diğer</option>
+        </select>
+      </label>
+      <label>Not<textarea id="spot-notes" rows="3" placeholder="Hangi rüzgarda iyi, park yeri, dip yapısı…"></textarea></label>
+      <p class="muted" id="spot-coords"></p>
+      <div class="dialog-actions">
+        <button type="button" id="spot-delete" class="btn danger" hidden>Sil</button>
+        <span class="spacer"></span>
+        <button type="button" id="spot-cancel" class="btn">Vazgeç</button>
+        <button type="submit" class="btn primary">Kaydet</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
