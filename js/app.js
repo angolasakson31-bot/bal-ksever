@@ -245,10 +245,17 @@ function initMap() {
   if (!window.L) { $('#map').innerHTML = '<div class="empty">Harita yüklenemedi. İnternet bağlantınızı kontrol edin.</div>'; return; }
   if (!map) {
     map = L.map('map', { doubleClickZoom: false }).setView([DEFAULT_PLACE.lat, DEFAULT_PLACE.lng], 10);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    const bases = baseLayers();
+    let baseName = ls('mapBase');
+    if (!bases[baseName]) baseName = Object.keys(bases)[0];
+    bases[baseName].addTo(map);
     spotLayer = L.layerGroup().addTo(map);
     catchLayer = L.layerGroup().addTo(map);
-    L.control.layers(null, { 'Meralar': spotLayer, 'Avlar': catchLayer }, { collapsed: true }).addTo(map);
+    const seamarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, maxNativeZoom: 18, attribution: '&copy; OpenSeaMap' });
+    if (ls('seamarks') === '1') seamarks.addTo(map);
+    L.control.layers(bases, { '⚓ Deniz işaretleri': seamarks, '📍 Meralar': spotLayer, '🐟 Avlar': catchLayer }, { collapsed: true, position: 'topright' }).addTo(map);
+    map.on('baselayerchange', e => { try { localStorage.setItem('mapBase', e.name); } catch { /* yok */ } });
+    map.on('overlayadd overlayremove', e => { if (e.layer === seamarks) try { localStorage.setItem('seamarks', e.type === 'overlayadd' ? '1' : '0'); } catch { /* yok */ } });
     const addAt = e => { if (Date.now() - lastMenuAt > 1200) openSpotDialog(null, e.latlng); };
     map.on('contextmenu', addAt);
     map.on('dblclick', addAt);
@@ -260,6 +267,40 @@ function initMap() {
     renderMapMarkers();
     if (!mapFitted) { fitAll(); mapFitted = true; }
   }, 60));
+}
+
+// Ücretsiz, anahtarsız ve sürekli güncellenen harita katmanları
+function baseLayers() {
+  const esri = path => `https://server.arcgisonline.com/ArcGIS/rest/services/${path}/MapServer/tile/{z}/{y}/{x}`;
+  return {
+    '🗺️ Detaylı (bol isimli)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd', maxZoom: 20, attribution: '&copy; OpenStreetMap &copy; CARTO' }),
+    '🛰️ Uydu + isimler': L.layerGroup([
+      L.tileLayer(esri('World_Imagery'), { maxZoom: 19, maxNativeZoom: 18, attribution: 'Uydu &copy; Esri, Maxar, Earthstar Geographics' }),
+      L.tileLayer(esri('Reference/World_Boundaries_and_Places'), { maxZoom: 19, maxNativeZoom: 18 }),
+      L.tileLayer(esri('Reference/World_Transportation'), { maxZoom: 19, maxNativeZoom: 18, opacity: 0.7 }),
+    ]),
+    '🧭 Standart (OSM, en güncel)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap katkıcıları' }),
+    '⛰️ Topoğrafik (göl/dere)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      subdomains: 'abc', maxZoom: 19, maxNativeZoom: 17, attribution: '&copy; OpenTopoMap (CC-BY-SA), OpenStreetMap' }),
+  };
+}
+
+// Dokunulan noktanın adı (göl, köy, iskele…) — OpenStreetMap Nominatim
+async function placeName(lat, lng) {
+  const url = layer => `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&accept-language=tr${layer ? `&layer=${layer}` : ''}`;
+  const pick = j => {
+    if (!j || j.error) return null;
+    const ad = j.address || {};
+    const main = j.name || ad.water || ad.natural || ad.bay || ad.village || ad.suburb || ad.town || ad.city_district || ad.city;
+    const area = [ad.town || ad.city_district || ad.county, ad.province || ad.state].filter(x => x && x !== main).join(', ');
+    return main ? { name: main, area } : null;
+  };
+  try {
+    const nat = pick(await (await fetch(url('natural'))).json());
+    if (nat) return nat;
+    return pick(await (await fetch(url(''))).json());
+  } catch { return null; }
 }
 
 function fitAll() {
@@ -876,16 +917,18 @@ async function onDetailWaterChange(e) {
 async function mapPointPopup(latlng) {
   const pop = L.popup().setLatLng(latlng).setContent('Hesaplanıyor… 🎣').openOn(map);
   try {
-    const place = { lat: latlng.lat, lng: latlng.lng, name: 'Seçilen nokta', water: 'auto' };
-    const a = await analyze(place);
+    const [nm, a] = await Promise.all([placeName(latlng.lat, latlng.lng), analyze({ lat: latlng.lat, lng: latlng.lng, name: 'Seçilen nokta', water: 'auto' })]);
+    const pname = nm?.name || 'Seçilen nokta';
+    a.place.name = pname;
     const r = rowAt(a, new Date()) || hourAt(a.rows, new Date());
     const best = a.rows.filter(x => x.date >= new Date() && x.date <= new Date(Date.now() + 864e5)).reduce((b, x) => (!b || x.score > b.score ? x : b), null);
-    pop.setContent(`<div class="pt-pop">${scorePill(r)} <b>${esc(scoreLabel(r.score, r.danger))}</b><br>
+    pop.setContent(`<div class="pt-pop">${nm ? `<div class="pt-name">📍 <b>${esc(nm.name)}</b>${nm.area ? `<br><small>${esc(nm.area)}</small>` : ''}</div>` : ''}
+      ${scorePill(r)} <b>${esc(scoreLabel(r.score, r.danger))}</b><br>
       <small>${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label} · şu an</small><br>
       <small>${esc(summaryLine(r, a.type))}</small><br>
       ${best ? `<small>24 saatin en iyisi: <b>${dayShort(best.date)} ${hh(best.date)}</b> (${fmt(best.score, 1)})</small>` : ''}
-      <div class="popup-actions"><button data-act="wx-point" data-lat="${latlng.lat}" data-lng="${latlng.lng}">Ayrıntılı tahmin</button>
-      <button data-act="spot-here" data-lat="${latlng.lat}" data-lng="${latlng.lng}">📍 Mera kaydet</button></div></div>`);
+      <div class="popup-actions"><button data-act="wx-point" data-lat="${latlng.lat}" data-lng="${latlng.lng}" data-name="${esc(pname)}">Ayrıntılı tahmin</button>
+      <button data-act="spot-here" data-lat="${latlng.lat}" data-lng="${latlng.lng}" data-name="${esc(nm?.name || '')}">📍 Mera kaydet</button></div></div>`);
   } catch (e) { pop.setContent(esc(e.message)); }
 }
 
@@ -1094,7 +1137,7 @@ function bindEvents() {
     if (act === 'edit-catch') openCatchDialog(state.catches.find(c => c.id === id));
     if (act === 'catch-spot') openCatchDialog(null, { spotId: id });
     if (act === 'wx-spot') { const sp = spotById(id); openDetail({ ...sp, key: sp.id }); }
-    if (act === 'wx-point') openDetail({ lat: +b.dataset.lat, lng: +b.dataset.lng, name: 'Seçilen nokta', water: 'auto' });
+    if (act === 'wx-point') openDetail({ lat: +b.dataset.lat, lng: +b.dataset.lng, name: b.dataset.name || 'Seçilen nokta', water: 'auto' });
     if (act === 'spot-here') openSpotDialog(null, { lat: +b.dataset.lat, lng: +b.dataset.lng }, 'auto', b.dataset.name || '');
   });
 
