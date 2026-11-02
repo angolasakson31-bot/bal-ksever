@@ -39,6 +39,12 @@
 
     <!-- HARİTA + MERALARIM -->
     <section id="tab-map" class="tab" data-title="Harita & Meralarım">
+      <form id="map-search" class="map-search" role="search">
+        <input id="map-q" type="search" placeholder="Yer ara: Ankara, Sapanca, Akyazı…" enterkeyhint="search" autocomplete="off">
+        <button type="submit" class="btn primary">Ara</button>
+      </form>
+      <div id="map-recent" class="chips recent"></div>
+      <div id="map-results" class="map-results" hidden></div>
       <div id="map"></div>
       <div class="map-tools">
         <button id="map-locate" class="btn small">📍 Konumum</button>

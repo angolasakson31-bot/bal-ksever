@@ -357,3 +357,16 @@ dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radiu
 .wxh .w { font-size: .8rem; font-weight: 600; }
 .wxh .g { font-size: .66rem; color: var(--muted); }
 .wxh .sc { font-size: .8rem; margin-top: 2px; }
+
+/* Harita yer arama */
+.map-search { display: flex; gap: 8px; margin-bottom: 8px; }
+.map-search input { flex: 1; }
+.recent { margin-bottom: 6px; align-items: center; }
+.recent .muted { flex: none; }
+.map-results { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.map-results .result {
+  display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; width: 100%;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; color: var(--text); font: inherit;
+}
+.map-results .result small { color: var(--text-2); font-size: .78rem; }
+.map-results .result.close { align-items: center; color: var(--text-2); }
