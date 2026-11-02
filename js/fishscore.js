@@ -52,10 +52,10 @@ const avg = a => { const v = a.filter(x => x != null); return v.length ? v.reduc
 const sum = a => a.filter(x => x != null).reduce((s, x) => s + x, 0);
 const max = a => { const v = a.filter(x => x != null); return v.length ? Math.max(...v) : null; };
 
-function lightPhase(date, suns) {
+function lightPhase(date, suns, midMin = 30) {
   const sun = suns.find(s => s.rise.toDateString() === date.toDateString());
   if (!sun) return null;
-  const t = date.getTime() + 30 * 60000; // saatin ortası
+  const t = date.getTime() + midMin * 60000; // zaman diliminin ortası
   const near = Math.min(Math.abs(t - sun.rise.getTime()), Math.abs(t - sun.set.getTime())) / 3600000;
   if (near <= 1.5) return 'twilight';
   if (t < sun.rise.getTime() || t > sun.set.getTime()) return 'night';
@@ -73,8 +73,13 @@ function freshWaterTemp(hours, i, type) {
 
 // ——— Ana fonksiyon: her saate skor ekler ———
 export function scoreHours(cond, type, lat, lng) {
-  const { hours, suns } = cond;
-  return hours.map((r, i) => {
+  return cond.hours.map((r, i) => scoreRow(r, i, cond.hours, cond.suns, type, lat, lng, 60));
+}
+
+// Tek bir zaman dilimini puanla. i: geçmişe bakış için saatlik dizideki konum, spanMin: dilim uzunluğu (dk)
+export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60) {
+  {
+    const mid = spanMin / 2;
     const reasons = [];
     let s = 4;
     let danger = false;
@@ -82,7 +87,7 @@ export function scoreHours(cond, type, lat, lng) {
     const past = n => hours.slice(Math.max(0, i - n), i);
 
     // 1) Işık
-    const light = lightPhase(r.date, suns);
+    const light = lightPhase(r.date, suns, mid);
     if (light === 'twilight') add(type === 'sea' ? 2 : 1.8, 'Alacakaranlık: avlanma saati');
     else if (light === 'night') add(type === 'sea' ? 0.8 : 0.6, 'Gece');
     else if (light === 'midday') {
@@ -162,7 +167,7 @@ export function scoreHours(cond, type, lat, lng) {
     }
 
     // 7) Ay (zayıf kanıt, düşük ağırlık)
-    const sol = solunar(new Date(r.date.getTime() + 30 * 60000), lat, lng);
+    const sol = solunar(new Date(r.date.getTime() + mid * 60000), lat, lng);
     if (sol === 'major') add(0.6, 'Solunar büyük dönem (ay tepede/altta)');
     else if (sol === 'minor') add(0.3, 'Solunar küçük dönem (ay doğuşu/batışı)');
     const moon = moonPhase(r.date);
@@ -170,7 +175,7 @@ export function scoreHours(cond, type, lat, lng) {
 
     const score = Math.round(Math.max(0, Math.min(10, s)) * 10) / 10;
     return { ...r, score, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
-  });
+  }
 }
 
 export const scoreClass = s => s >= 6.5 ? 's-good' : s >= 4.5 ? 's-mid' : 's-bad';

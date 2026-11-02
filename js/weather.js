@@ -29,20 +29,24 @@ export async function getConditions(lat, lng, { force = false } = {}) {
     '&daily=sunrise,sunset';
   const mBase = `${MARINE}?${base}&past_days=2&hourly=wave_height,wave_direction,sea_surface_temperature`;
   const mUrl = `${mBase},wave_period,swell_wave_height,ocean_current_velocity,ocean_current_direction`;
+  // 15 dakikalık veri (önümüzdeki 48 saat). Desteklenmezse saatlik veriden ara değer hesaplanır.
+  const qUrl = `${FORECAST}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&wind_speed_unit=kmh&models=best_match` +
+    '&minutely_15=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,is_day&forecast_minutely_15=192&past_minutely_15=4';
 
   try {
     // Ek deniz değişkenleri bir noktada desteklenmezse temel değişkenlerle tekrar dene
     const marine = getJson(mUrl).catch(() => getJson(mBase)).catch(() => null);
-    const [f, m] = await Promise.all([getJson(fUrl), marine]);
-    const cond = normalize(f, m);
+    const quarter = getJson(qUrl).catch(() => null);
+    const [f, m, q] = await Promise.all([getJson(fUrl), marine, quarter]);
+    const cond = normalize(f, m, q);
     cond.fetchedAt = Date.now();
     memCache.set(k, cond);
-    try { localStorage.setItem('wx2:' + k, JSON.stringify({ f, m, fetchedAt: cond.fetchedAt })); } catch { /* dolu */ }
+    try { localStorage.setItem('wx2:' + k, JSON.stringify({ f, m, q, fetchedAt: cond.fetchedAt })); } catch { /* dolu */ }
     return cond;
   } catch (err) {
     try {
       const c = JSON.parse(localStorage.getItem('wx2:' + k));
-      if (c) { const cond = normalize(c.f, c.m); cond.fetchedAt = c.fetchedAt; cond.offline = true; return cond; }
+      if (c) { const cond = normalize(c.f, c.m, c.q); cond.fetchedAt = c.fetchedAt; cond.offline = true; return cond; }
     } catch { /* yok */ }
     throw err;
   }
@@ -56,7 +60,7 @@ function localDate(s) {
   return new Date(y, mo - 1, da, hh, mm);
 }
 
-function normalize(f, m) {
+function normalize(f, m, q) {
   const h = f.hourly;
   const mi = new Map();
   if (m?.hourly) m.hourly.time.forEach((t, i) => mi.set(t, i));
@@ -91,7 +95,17 @@ function normalize(f, m) {
   const suns = f.daily.time.map((d, i) => ({ day: d, rise: localDate(f.daily.sunrise[i]), set: localDate(f.daily.sunset[i]) }));
   // Deniz verisi geliyorsa nokta denizdedir; gelmiyorsa tatlı su (göl/baraj/dere) kabul edilir
   const seaDetected = !!m?.hourly?.wave_height?.some(v => v != null);
-  return { hours, suns, seaDetected };
+  // 15 dakikalık veriler: zaman damgası (ms) → değerler
+  const m15 = new Map();
+  const Q = q?.minutely_15;
+  if (Q?.time) Q.time.forEach((t, i) => {
+    if (Q.temperature_2m?.[i] == null) return;
+    m15.set(localDate(t).getTime(), {
+      temp: Q.temperature_2m[i], precip15: Q.precipitation?.[i] ?? null, wind: Q.wind_speed_10m?.[i] ?? null,
+      windDir: Q.wind_direction_10m?.[i] ?? null, gust: Q.wind_gusts_10m?.[i] ?? null, code: Q.weather_code?.[i] ?? null, isDay: Q.is_day?.[i] ?? null,
+    });
+  });
+  return { hours, suns, seaDetected, m15 };
 }
 
 // ——— Rüzgar yönleri (Türk denizci isimleriyle) ———
