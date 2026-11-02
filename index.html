@@ -47,13 +47,25 @@
       <p class="map-hint">İpucu: Haritada bir yere uzun basarak (veya bilgisayarda çift tıklayarak) mera ekleyebilirsiniz.</p>
     </section>
 
-    <!-- HAVA -->
-    <section id="tab-weather" class="tab" data-title="Hava & Deniz">
-      <div class="filter-row">
-        <select id="weather-place"></select>
-        <button id="weather-refresh" class="btn small">↻</button>
+    <!-- TAHMİN: meraları sırala -->
+    <section id="tab-weather" class="tab" data-title="Mera Tahmini">
+      <div class="seg" id="rank-when">
+        <button data-when="now" class="active">Şimdi</button>
+        <button data-when="evening">Bu akşam</button>
+        <button data-when="morning">Yarın sabah</button>
+        <button data-when="best24">24 saatin en iyisi</button>
+        <button data-when="custom">📅 Gün/saat seç</button>
       </div>
-      <div id="weather-content"></div>
+      <div id="rank-custom-row" class="filter-row" hidden>
+        <input id="rank-custom" type="datetime-local">
+      </div>
+      <div class="filter-row">
+        <label class="check" style="margin:0;flex:1"><input type="checkbox" id="rank-me"> Konumumu da ekle</label>
+        <button id="rank-refresh" class="btn small">↻ Yenile</button>
+      </div>
+      <div id="rank-list"></div>
+      <p class="muted">Skor 0–10 arası tahmindir: su sıcaklığı, ışık (alacakaranlık), dalga, rüzgar, yağış, basınç ve ay hesaba katılır.
+        Veriler her açılışta Open-Meteo'dan güncel çekilir (7 gün, saatlik).</p>
     </section>
 
     <!-- İSTATİSTİK -->
@@ -72,7 +84,7 @@
   <nav class="bottom-nav">
     <button data-tab="catches" class="active"><span>🐟</span>Avlar</button>
     <button data-tab="map"><span>🗺️</span>Harita</button>
-    <button data-tab="weather"><span>🌊</span>Hava</button>
+    <button data-tab="weather"><span>🎯</span>Tahmin</button>
     <button data-tab="stats"><span>📊</span>İstatistik</button>
     <button data-tab="more"><span>📖</span>Rehber</button>
   </nav>
@@ -144,6 +156,14 @@
           <option>Sahil / kumsal</option><option>Köprü</option><option>Diğer</option>
         </select>
       </label>
+      <label>Su tipi
+        <select id="spot-water">
+          <option value="auto">Otomatik algıla</option>
+          <option value="sea">🌊 Deniz</option>
+          <option value="lake">🏞️ Göl / baraj</option>
+          <option value="river">🏔️ Nehir / dere</option>
+        </select>
+      </label>
       <label>Not<textarea id="spot-notes" rows="3" placeholder="Hangi rüzgarda iyi, park yeri, dip yapısı…"></textarea></label>
       <p class="muted" id="spot-coords"></p>
       <div class="dialog-actions">
@@ -153,6 +173,15 @@
         <button type="submit" class="btn primary">Kaydet</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Nokta detayı: saatlik hava + balık skoru -->
+  <dialog id="wx-dialog" class="full">
+    <div class="wx-head">
+      <div><h2 id="wx-title">Tahmin</h2><div id="wx-sub" class="muted"></div></div>
+      <button id="wx-close" class="icon-btn" aria-label="Kapat">✕</button>
+    </div>
+    <div id="wx-body"></div>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
