@@ -10,6 +10,7 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
 - **Meraya dokun → ayrıntılı tahmin:** öneri metni (ne zaman, hangi tür, hangi yem/takım, rüzgara göre nereye atılır), türlere göre tahmin,
   grafikler (skor, rüzgar/hamle, dalga/soluğan veya yağış, hava/su sıcaklığı, basınç), ayrıntılı hava (hissedilen, nem, görüş, UV,
   dalga periyodu, akıntı, güneş ve ay doğuş/batış, solunar).
+- **Haritada yer arama:** “Ankara”, “Sakarya Akyazı”, “Sapanca Gölü” gibi yer yazıp arayın; harita oraya gider, 📌 işaretten tek dokunuşla mera ekleyin veya tahmine bakın. Son 5 arama hatırlanır. (OpenStreetMap Nominatim, yedek: Open-Meteo yer araması)
 - **Meraya basılı tut:** adını değiştir, sil, düzenle, av ekle, yol tarifi.
 - **Saat saat görsel hava:** her saat için hava simgesi (güneş, bulut, yağmur, gece), sıcaklık, yağmur ihtimali sütunu, rüzgar ok + hız + hamle; 7 günlük gün kartları (simge, en yüksek/en düşük, yağış, rüzgar).
 - **Haritada boş bir noktaya dokun:** o noktanın skoru ve özeti; tek dokunuşla ayrıntılı tahmin veya mera kaydı.

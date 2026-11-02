@@ -307,12 +307,78 @@ async function locateMe() {
   } catch (e) { toast(e.message); return null; }
 }
 
+// ————————————————— Yer arama —————————————————
+// OpenStreetMap Nominatim (göl, iskele, köy, ilçe…); ulaşılamazsa Open-Meteo yer araması.
+// Nominatim kuralı gereği sadece "Ara"ya basınca arar (yazarken sürekli istek atmaz).
+let searchMarker = null;
+async function searchPlaces(q) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&accept-language=tr&q=${encodeURIComponent(q)}`);
+    if (!r.ok) throw new Error();
+    const j = await r.json();
+    return j.map(x => ({
+      name: x.name || x.display_name.split(',')[0], detail: x.display_name,
+      lat: +x.lat, lng: +x.lon, bbox: x.boundingbox ? x.boundingbox.map(Number) : null,
+    }));
+  } catch {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=tr`);
+    if (!r.ok) throw new Error('Yer araması yapılamadı. İnternet bağlantınızı kontrol edin.');
+    const j = await r.json();
+    return (j.results || []).map(x => ({ name: x.name, detail: [x.admin2, x.admin1, x.country].filter(Boolean).join(', '), lat: x.latitude, lng: x.longitude, bbox: null }));
+  }
+}
+
+function recentSearches() { try { return JSON.parse(ls('recentSearches') || '[]'); } catch { return []; } }
+function renderRecent() {
+  const r = recentSearches();
+  $('#map-recent').innerHTML = r.length ? '<span class="muted">Son:</span>' + r.map((x, i) => `<button type="button" data-recent="${i}">📌 ${esc(x.name)}</button>`).join('') : '';
+}
+
+function goToPlace(p) {
+  initMap();
+  if (!map) return;
+  $('#map-results').hidden = true;
+  if (p.bbox && p.bbox.every(Number.isFinite)) map.fitBounds([[p.bbox[0], p.bbox[2]], [p.bbox[1], p.bbox[3]]], { maxZoom: 15, padding: [20, 20] });
+  else map.setView([p.lat, p.lng], 13);
+  if (searchMarker) map.removeLayer(searchMarker);
+  searchMarker = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: 'spot-marker', html: '📌', iconSize: [26, 26], iconAnchor: [6, 26] }), zIndexOffset: 2000 })
+    .addTo(map)
+    .bindPopup(`<b>${esc(p.name)}</b><br><small>${esc(p.detail || '')}</small>
+      <div class="popup-actions"><button data-act="spot-here" data-lat="${p.lat}" data-lng="${p.lng}" data-name="${esc(p.name)}">📍 Buraya mera ekle</button>
+      <button data-act="wx-point" data-lat="${p.lat}" data-lng="${p.lng}">🎯 Tahmin</button></div>
+      <small class="muted">İpucu: yakınlaştırıp tam kıyıya dokunun veya basılı tutun.</small>`)
+    .openPopup();
+  const list = [p, ...recentSearches().filter(x => x.name !== p.name)].slice(0, 5);
+  try { localStorage.setItem('recentSearches', JSON.stringify(list)); } catch { /* yok */ }
+  renderRecent();
+  document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function onMapSearch(e) {
+  e.preventDefault();
+  const q = $('#map-q').value.trim();
+  const box = $('#map-results');
+  if (q.length < 2) return;
+  $('#map-q').blur();
+  box.hidden = false;
+  box.innerHTML = '<div class="muted">Aranıyor…</div>';
+  try {
+    const res = await searchPlaces(q);
+    state.searchResults = res;
+    box.innerHTML = res.length
+      ? res.map((p, i) => `<button type="button" class="result" data-result="${i}"><b>${esc(p.name)}</b><small>${esc(p.detail)}</small></button>`).join('') +
+        '<button type="button" class="result close" data-result="close">✕ Kapat</button>'
+      : `<div class="muted">“${esc(q)}” bulunamadı. Farklı yazmayı deneyin (örn. “Akyazı, Sakarya”).</div>`;
+    if (res.length === 1) goToPlace(res[0]);
+  } catch (err) { box.innerHTML = `<div class="warn">${esc(err.message)}</div>`; }
+}
+
 // ————————————————— Mera ekleme —————————————————
 let editingSpot = null;
-function openSpotDialog(s, latlng, water) {
+function openSpotDialog(s, latlng, water, name = '') {
   editingSpot = s ? { ...s } : { id: null, lat: latlng.lat, lng: latlng.lng };
   $('#spot-dialog-title').textContent = s ? 'Merayı düzenle' : 'Yeni Mera';
-  $('#spot-name').value = s?.name || '';
+  $('#spot-name').value = s?.name || name;
   $('#spot-type').value = s?.type || 'İskele';
   $('#spot-water').value = s?.water || water || 'auto';
   $('#spot-notes').value = s?.notes || '';
@@ -928,6 +994,16 @@ function bindEvents() {
   $('#spot-cancel').addEventListener('click', () => $('#spot-dialog').close());
   $('#spot-delete').addEventListener('click', deleteSpot);
   $('#map-locate').addEventListener('click', locateMe);
+  $('#map-search').addEventListener('submit', onMapSearch);
+  $('#map-results').addEventListener('click', e => {
+    const b = e.target.closest('[data-result]'); if (!b) return;
+    if (b.dataset.result === 'close') { $('#map-results').hidden = true; return; }
+    goToPlace(state.searchResults[+b.dataset.result]);
+  });
+  $('#map-recent').addEventListener('click', e => {
+    const b = e.target.closest('[data-recent]'); if (b) goToPlace(recentSearches()[+b.dataset.recent]);
+  });
+  renderRecent();
   $('#map-fit').addEventListener('click', () => { initMap(); fitAll(); });
   $('#map-add-spot').addEventListener('click', async () => {
     initMap();
@@ -947,7 +1023,7 @@ function bindEvents() {
     if (act === 'catch-spot') openCatchDialog(null, { spotId: id });
     if (act === 'wx-spot') { const sp = spotById(id); openDetail({ ...sp, key: sp.id }); }
     if (act === 'wx-point') openDetail({ lat: +b.dataset.lat, lng: +b.dataset.lng, name: 'Seçilen nokta', water: 'auto' });
-    if (act === 'spot-here') openSpotDialog(null, { lat: +b.dataset.lat, lng: +b.dataset.lng });
+    if (act === 'spot-here') openSpotDialog(null, { lat: +b.dataset.lat, lng: +b.dataset.lng }, 'auto', b.dataset.name || '');
   });
 
   // Tahmin
