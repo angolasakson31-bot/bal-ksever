@@ -15,6 +15,9 @@
   --warn: #b26b00;
   --bad: #c0392b;
   --pill-ink: #ffffff;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --grid: #e1e0d9;
   --radius: 14px;
   --nav-h: 64px;
   color-scheme: light;
@@ -36,6 +39,9 @@
     --warn: #e0a03a;
     --bad: #ef6f5f;
     --pill-ink: #04121b;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --grid: #2a4152;
     color-scheme: dark;
   }
 }
@@ -43,7 +49,7 @@
   --bg: #0d1820; --surface: #15242f; --surface-2: #1d313f; --text: #e6eef3;
   --text-2: #a9bcc8; --muted: #7d93a1; --border: #2a4152; --primary: #3aa6d8;
   --primary-ink: #04121b; --header: #08283d; --bar: #4fa9d9; --good: #4cc27f;
-  --warn: #e0a03a; --bad: #ef6f5f; --pill-ink: #04121b; color-scheme: dark;
+  --warn: #e0a03a; --bad: #ef6f5f; --pill-ink: #04121b; --s1: #3987e5; --s2: #d95926; --grid: #2a4152; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -161,7 +167,7 @@ dialog h2 { margin: 0 0 6px; font-size: 1.2rem; }
 .photo-pick img:not([hidden]) + span { position: absolute; bottom: 6px; right: 8px; background: rgba(0,0,0,.6); color: #fff; padding: 2px 8px; border-radius: 8px; font-size: .8rem; }
 
 /* Harita */
-#map { height: calc(100dvh - 260px); min-height: 320px; border-radius: var(--radius); border: 1px solid var(--border); z-index: 1; }
+#map { height: 52dvh; min-height: 300px; border-radius: var(--radius); border: 1px solid var(--border); z-index: 1; }
 .map-tools { display: flex; gap: 8px; margin-top: 10px; }
 .map-hint { font-size: .8rem; color: var(--muted); }
 .fish-marker { font-size: 22px; line-height: 1; text-shadow: 0 0 3px #fff; }
@@ -281,3 +287,39 @@ button.hour.now { border-color: var(--primary); }
 .pt-pop { min-width: 200px; line-height: 1.5; }
 .pt-pop .score-pill { font-size: .95rem; min-width: 40px; padding: 2px 6px; }
 [hidden] { display: none !important; }
+
+/* Harita + Meralarım */
+.section-title { font-size: 1.05rem; margin: 18px 0 10px; }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chips button {
+  flex: none; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 99px; padding: 7px 13px; font: inherit; font-size: .85rem; white-space: nowrap;
+}
+.chips button.active { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+.rank-head { margin: 0 0 2px; }
+.mk-wrap { background: none; border: 0; }
+.mk { position: relative; width: 30px; height: 30px; }
+.mk-dot {
+  display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%;
+  color: var(--pill-ink); font-weight: 700; font-size: 14px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.mk-name {
+  position: absolute; left: 32px; top: 5px; white-space: nowrap; background: rgba(255,255,255,.92); color: #13222c;
+  font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+
+/* Detay: grafik, tür, öneri */
+.card h4 { margin: 14px 0 4px; font-size: .85rem; color: var(--text-2); font-weight: 600; }
+.chart svg { width: 100%; height: 130px; display: block; touch-action: pan-y; }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .ax { fill: var(--muted); font-size: 10px; }
+.chart .sel { stroke: var(--primary); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.chart .xh { stroke: var(--text-2); stroke-width: 1; }
+.legend { display: flex; gap: 14px; font-size: .78rem; color: var(--text-2); margin-bottom: 2px; }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.species-bars .hbar { grid-template-columns: 120px 1fr 34px; row-gap: 0; }
+.species-bars .name { white-space: normal; line-height: 1.2; }
+.species-bars .sp-note { grid-column: 1 / -1; font-size: .72rem; color: var(--muted); margin: -2px 0 4px; }
+.advice p { margin: 0 0 8px; font-size: .92rem; line-height: 1.5; }
+.advice p:last-child { margin-bottom: 0; }

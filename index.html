@@ -37,22 +37,26 @@
       <div id="catch-list" class="catch-list"></div>
     </section>
 
-    <!-- HARİTA -->
-    <section id="tab-map" class="tab" data-title="Mera Haritası">
+    <!-- HARİTA + MERALARIM -->
+    <section id="tab-map" class="tab" data-title="Harita & Meralarım">
       <div id="map"></div>
       <div class="map-tools">
         <button id="map-locate" class="btn small">📍 Konumum</button>
+        <button id="map-fit" class="btn small">🔍 Tüm meralar</button>
         <button id="map-add-spot" class="btn small primary">＋ Mera ekle</button>
       </div>
-      <p class="map-hint">İpucu: Haritada bir yere uzun basarak (veya bilgisayarda çift tıklayarak) mera ekleyebilirsiniz.</p>
-    </section>
+      <p class="map-hint">Haritada bir yere dokunun: o noktanın balık skoru ve havası çıkar. Uzun basarak da mera ekleyebilirsiniz.</p>
 
-    <!-- TAHMİN: meraları sırala -->
-    <section id="tab-weather" class="tab" data-title="Mera Tahmini">
-      <div class="seg" id="rank-when">
+      <h2 class="section-title">🎯 Meralarım: en iyiden en kötüye</h2>
+      <div class="chips" id="rank-when">
         <button data-when="now" class="active">Şimdi</button>
+        <button data-when="h1">+1 saat</button>
+        <button data-when="h3">+3 saat</button>
+        <button data-when="h6">+6 saat</button>
+        <button data-when="h12">+12 saat</button>
         <button data-when="evening">Bu akşam</button>
         <button data-when="morning">Yarın sabah</button>
+        <button data-when="tomorrowEvening">Yarın akşam</button>
         <button data-when="best24">24 saatin en iyisi</button>
         <button data-when="custom">📅 Gün/saat seç</button>
       </div>
@@ -64,8 +68,8 @@
         <button id="rank-refresh" class="btn small">↻ Yenile</button>
       </div>
       <div id="rank-list"></div>
-      <p class="muted">Skor 0–10 arası tahmindir: su sıcaklığı, ışık (alacakaranlık), dalga, rüzgar, yağış, basınç ve ay hesaba katılır.
-        Veriler her açılışta Open-Meteo'dan güncel çekilir (7 gün, saatlik).</p>
+      <p class="muted">Skor 0–10 arası bir tahmindir: su sıcaklığı, ışık, dalga, rüzgar, yağış, basınç ve ay hesaba katılır.
+        Veriler her açılışta Open-Meteo'dan güncel olarak çekilir (7 gün, saatlik).</p>
     </section>
 
     <!-- İSTATİSTİK -->
@@ -84,7 +88,6 @@
   <nav class="bottom-nav">
     <button data-tab="catches" class="active"><span>🐟</span>Avlar</button>
     <button data-tab="map"><span>🗺️</span>Harita</button>
-    <button data-tab="weather"><span>🎯</span>Tahmin</button>
     <button data-tab="stats"><span>📊</span>İstatistik</button>
     <button data-tab="more"><span>📖</span>Rehber</button>
   </nav>

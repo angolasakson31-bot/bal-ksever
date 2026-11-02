@@ -5,8 +5,12 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
 ## v1 özellikleri
 - **Av günlüğü:** fotoğraf, tür, boy, ağırlık, adet, yem, takım, mera, konum, not. Asgari boy uyarısı.
 - **Mera haritası:** meraları haritada işaretleme, avları haritada görme, Google/Apple yol tarifi.
-- **Mera tahmini (🎯 Tahmin sekmesi):** işaretlenen tüm meraları balık skoruna göre en iyiden en kötüye sıralar. Zaman seçilebilir: şimdi, bu akşam, yarın sabah, 24 saatin en iyisi ya da 7 gün içinde istenen gün ve saat.
-- **Haritada herhangi bir noktaya dokun:** o noktanın şu anki skoru, rüzgarı, dalgası ve su sıcaklığı; saat saat 7 günlük detay.
+- **Harita & Meralarım (tek ekran):** üstte harita, altta işaretlenen bütün meraların en iyiden en kötüye sıralaması. Haritadaki işaretlerde sıra numarası ve skor rengi görünür.
+  Zaman seçenekleri: şimdi, +1/+3/+6/+12 saat, bu akşam, yarın sabah, yarın akşam, 24 saatin en iyisi, 7 gün içinde istenen gün/saat.
+- **Meraya dokun → ayrıntılı tahmin:** öneri metni (ne zaman, hangi tür, hangi yem/takım, rüzgara göre nereye atılır), türlere göre tahmin,
+  grafikler (skor, rüzgar/hamle, dalga/soluğan veya yağış, hava/su sıcaklığı, basınç), ayrıntılı hava (hissedilen, nem, görüş, UV,
+  dalga periyodu, akıntı, güneş ve ay doğuş/batış, solunar).
+- **Haritada boş bir noktaya dokun:** o noktanın skoru ve özeti; tek dokunuşla ayrıntılı tahmin veya mera kaydı.
 - **Deniz ve tatlı su:** su tipi otomatik algılanır (deniz verisi varsa deniz, yoksa göl). Elle göl/baraj veya nehir/dere seçilebilir. Her su tipi için ayrı puanlama yapılır.
 - **İstatistik:** tür, saat, ay, yem ve meraya göre dağılım; rekorlar.
 - **Rehber:** Marmara türleri (sezon, yem, yöntem, asgari boy), çıkış kontrol listesi.
@@ -41,6 +45,7 @@ python3 -m http.server 8000
 ## Yol haritası
 - [x] v1: kişisel av günlüğü, harita, hava, istatistik, rehber
 - [x] Mera sıralama, nokta tahmini, tatlı su desteği
+- [x] Harita + sıralama tek ekran, tür tahmini, grafikler, öneri metni
 - [ ] v2: arkadaş grubu (giriş, ortak akış, ortak meralar)
 - [ ] v2: sıralama tablosu, rozetler, aylık yarışma
 - [ ] Plan/buluşma, bildirimler
