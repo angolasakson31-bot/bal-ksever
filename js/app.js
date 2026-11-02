@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
-import { getConditions, windName, arrow, weatherText } from './weather.js';
+import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL } from './weather.js';
 import { scoreHours, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 
@@ -62,6 +62,19 @@ const toLocalInput = d => {
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
+// Basılı tutma (uzun basma) algılayıcı
+function onLongPress(el, fn, ms = 550) {
+  let t = null, sx = 0, sy = 0;
+  el.addEventListener('pointerdown', e => {
+    sx = e.clientX; sy = e.clientY; clearTimeout(t);
+    t = setTimeout(() => { el.dataset.lp = Date.now(); try { navigator.vibrate?.(25); } catch { /* yok */ } fn(e); }, ms);
+  });
+  el.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 10) clearTimeout(t); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => el.addEventListener(ev, () => clearTimeout(t)));
+  el.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); if (Date.now() - (+el.dataset.lp || 0) > 800) { el.dataset.lp = Date.now(); fn(e); } });
+}
+const justLongPressed = el => Date.now() - (+(el?.dataset.lp) || 0) < 800;
+
 const ls = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const spotById = id => state.spots.find(s => s.id === id);
 
@@ -235,7 +248,7 @@ function initMap() {
     spotLayer = L.layerGroup().addTo(map);
     catchLayer = L.layerGroup().addTo(map);
     L.control.layers(null, { 'Meralar': spotLayer, 'Avlar': catchLayer }, { collapsed: true }).addTo(map);
-    const addAt = e => openSpotDialog(null, e.latlng);
+    const addAt = e => { if (Date.now() - lastMenuAt > 1200) openSpotDialog(null, e.latlng); };
     map.on('contextmenu', addAt);
     map.on('dblclick', addAt);
     map.on('click', e => mapPointPopup(e.latlng));
@@ -264,10 +277,13 @@ function renderMapMarkers() {
     const info = rankInfo.get(s.id);
     const html = `<div class="mk"><span class="mk-dot" style="background:${info ? scoreColor(info.score) : 'var(--muted)'}">${info ? info.rank : '•'}</span>` +
       `<span class="mk-name">${esc(s.name)}${info ? ` · ${fmt(info.score, 1)}` : ''}</span></div>`;
-    L.marker([s.lat, s.lng], {
+    const marker = L.marker([s.lat, s.lng], {
       icon: L.divIcon({ className: 'mk-wrap', html, iconSize: [30, 30], iconAnchor: [15, 15] }),
       zIndexOffset: info ? 1000 - info.rank : 0, title: s.name,
-    }).on('click', () => openDetail({ ...s, key: s.id })).addTo(spotLayer);
+    });
+    marker.on('click', () => { if (!justLongPressed(marker.getElement())) openDetail({ ...s, key: s.id }); });
+    marker.on('add', () => { const el = marker.getElement(); if (el && !el.dataset.lpBound) { el.dataset.lpBound = 1; onLongPress(el, () => openSpotMenu(s)); } });
+    marker.addTo(spotLayer);
   }
   for (const c of state.catches) {
     if (c.lat == null) continue;
@@ -403,7 +419,7 @@ async function renderRank(force = false) {
   renderMapMarkers();
   const offline = results.some(x => x.a?.cond.offline);
   box.innerHTML = (offline ? '<p class="warn">Çevrimdışı: kayıtlı son veriler gösteriliyor.</p>' : '') +
-    `<p class="muted rank-head">${ok.length} mera · ${WHEN_LABEL[rankWhen]} için sıralandı</p>` +
+    `<p class="muted rank-head">${ok.length} mera · ${WHEN_LABEL[rankWhen]} için sıralandı · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}<br>Basılı tutun: adını değiştir / sil</p>` +
     ok.map((x, i) => {
       const { a, r } = x;
       const top = r.reasons.slice(0, 3).map(([v, t]) => `${v > 0 ? '＋' : '－'} ${esc(t)}`).join('<br>');
@@ -482,6 +498,58 @@ function onChartMove(e) {
     d.series.map(s => `${s.label} ${fmt(r[s.key], d.decimals)}${d.unit}`).join(' · ');
 }
 
+function dayInfo(rows, date) {
+  const dr = rows.filter(r => r.date.toDateString() === date.toDateString());
+  const daytime = dr.filter(r => r.isDay !== 0);
+  const code = Math.max(...(daytime.length ? daytime : dr).map(r => r.code ?? 0));
+  return {
+    icon: weatherIcon(code, 1),
+    max: Math.max(...dr.map(r => r.temp)), min: Math.min(...dr.map(r => r.temp)),
+    rain: dr.reduce((a, r) => a + (r.precip || 0), 0), wind: Math.max(...dr.map(r => r.wind ?? 0)),
+  };
+}
+
+// —— Meraya basılı tutunca menü ——
+let menuSpot = null, lastMenuAt = 0;
+function openSpotMenu(s) {
+  const dlg = $('#spot-menu');
+  lastMenuAt = Date.now();
+  map?.closePopup();
+  if (dlg.open) return;
+  menuSpot = spotById(s.id) || s;
+  $('#spot-menu-title').textContent = menuSpot.name;
+  $('#spot-rename').value = menuSpot.name;
+  dlg.showModal();
+}
+
+async function onSpotMenu(e) {
+  if (e.target === $('#spot-menu')) { $('#spot-menu').close(); return; } // arka plana dokununca kapat
+  const b = e.target.closest('[data-menu]');
+  if (!b || !menuSpot) return;
+  const s = menuSpot, act = b.dataset.menu;
+  $('#spot-menu').close();
+  if (act === 'detail') openDetail({ ...s, key: s.id });
+  if (act === 'catch') openCatchDialog(null, { spotId: s.id });
+  if (act === 'edit') openSpotDialog(s);
+  if (act === 'directions') window.open(`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`, '_blank', 'noopener');
+  if (act === 'delete' && confirm(`“${s.name}” silinsin mi? (Bu meradaki av kayıtları silinmez)`)) {
+    await db.remove('spots', s.id);
+    rankInfo.delete(s.id);
+    await loadData(); refreshAll();
+    toast('Mera silindi');
+  }
+}
+
+async function renameSpot(e) {
+  e.preventDefault();
+  const name = $('#spot-rename').value.trim();
+  if (!name || !menuSpot) return;
+  await db.put('spots', { ...menuSpot, name });
+  $('#spot-menu').close();
+  await loadData(); refreshAll();
+  toast('Adı değiştirildi');
+}
+
 // —— Nokta detayı ——
 let detail = null; // { a, day, sel }
 async function openDetail(place) {
@@ -537,8 +605,35 @@ function renderDetail() {
         ${Object.entries(WATER_TYPES).map(([k, v]) => `<option value="${k}" ${place.water === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
       </select>
     </div>
-    <div class="chips">${days.map(s => `<button data-day="${s.rise.toDateString()}" class="${s.rise.toDateString() === detail.day ? 'active' : ''}">
-      ${s.rise.toDateString() === new Date().toDateString() ? 'Bugün' : s.rise.toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric' })}</button>`).join('')}</div>
+    <p class="muted fresh">Son güncelleme ${fmtTime(cond.fetchedAt)} · Open-Meteo (en iyi model otomatik) <button id="wx-refresh" class="btn small">↻ Yenile</button></p>
+    <div class="chips day-chips">${days.map(s => { const di = dayInfo(rows, s.rise); return `<button data-day="${s.rise.toDateString()}" class="${s.rise.toDateString() === detail.day ? 'active' : ''}">
+      <span class="dn">${s.rise.toDateString() === new Date().toDateString() ? 'Bugün' : s.rise.toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric' })}</span>
+      <span class="di">${di.icon}</span><span class="dt">${fmt(di.max)}° / ${fmt(di.min)}°</span>
+      <span class="dr">${di.rain >= 0.5 ? `💧${fmt(di.rain, 0)} mm` : '💧0'} · 💨${fmt(di.wind)}</span></button>`; }).join('')}</div>
+
+    <div class="card now-card">
+      <div class="now-ico">${weatherIcon(sel.code, sel.isDay)}</div>
+      <div class="now-main"><div class="now-t">${fmt(sel.temp)}°<small> hissedilen ${fmt(sel.feels)}°</small></div>
+        <div class="now-w">${weatherWord(sel.code)} · ${sel.date.toLocaleDateString('tr-TR', { weekday: 'short' })} ${hh(sel.date)}</div></div>
+      <div class="now-side"><div>${arrow(sel.windDir)} <b>${fmt(sel.wind)}</b> km/s</div><div class="muted">${windName(sel.windDir, true)} · hamle ${fmt(sel.gust)}</div>
+        <div>💧 %${fmt(sel.rainProb)} · ${fmt(sel.precip, 1)} mm</div></div>
+    </div>
+
+    <div class="card"><h3>🌤️ Saat saat hava</h3>
+      <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === sel ? 'now' : ''}" data-t="${r.date.getTime()}">
+        <div class="h">${hh(r.date)}</div>
+        <div class="ico">${weatherIcon(r.code, r.isDay)}</div>
+        <div class="t">${fmt(r.temp)}°</div>
+        <div class="rain" title="Yağmur ihtimali %${fmt(r.rainProb)}"><span style="height:${Math.max(0, Math.min(100, r.rainProb ?? 0))}%"></span></div>
+        <div class="rp">${(r.rainProb ?? 0) >= 20 ? `%${fmt(r.rainProb)}` : '&nbsp;'}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}mm` : ''}</div>
+        <div class="w">${arrow(r.windDir)} ${fmt(r.wind)}</div>
+        <div class="g">hamle ${fmt(r.gust)}</div>
+        ${type === 'sea' && r.wave != null ? `<div class="g">🌊 ${fmt(r.wave, 1)}m</div>` : ''}
+        <div class="sc ${scoreClass(r.score)}">🎣 ${fmt(r.score, 1)}</div>
+        ${r.danger ? '<div>⚠️</div>' : ''}
+      </button>`).join('')}</div>
+      <p class="chart-note">Mavi sütun: yağmur ihtimali. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
+    </div>
 
     <div class="card score-card">
       <div class="score-ring" style="border-color:${scoreColor(sel.score)}">${fmt(sel.score, 1)}<small>/ 10</small></div>
@@ -549,17 +644,6 @@ function renderDetail() {
     </div>
 
     <div class="card advice"><h3>💡 Öneri</h3>${advice.map(t => `<p>${t}</p>`).join('')}</div>
-
-    <div class="card"><h3>Saat saat</h3>
-      <div class="hours" id="wx-hours">${dayRows.map(r => `<button class="hour ${r === sel ? 'now' : ''}" data-t="${r.date.getTime()}">
-        <div class="h">${hh(r.date)}</div>
-        <div class="sc ${scoreClass(r.score)}">${fmt(r.score, 1)}</div>
-        <div>${arrow(r.windDir)} ${fmt(r.wind)}</div>
-        <div class="muted">${type === 'sea' && r.wave != null ? fmt(r.wave, 1) + 'm' : fmt(r.temp) + '°'}</div>
-        ${r.danger ? '<div>⚠️</div>' : ''}
-      </button>`).join('')}</div>
-      <p class="chart-note">Bir saate dokunun. Ok: rüzgarın estiği yön, rakam: km/s, alt satır: ${type === 'sea' ? 'dalga' : 'hava sıcaklığı'}.</p>
-    </div>
 
     <div class="card"><h3>🐟 Türlere göre tahmin (${hh(sel.date)})</h3>
       <div class="hbars species-bars">${species.map(s => `<div class="hbar">
@@ -623,6 +707,13 @@ async function onDetailClick(e) {
   }
   const h = e.target.closest('.hour[data-t]');
   if (h) { detail.sel = detail.a.rows.find(r => r.date.getTime() === +h.dataset.t); renderDetail(); return; }
+  if (e.target.id === 'wx-refresh') {
+    const t = detail.sel.date.getTime();
+    e.target.textContent = 'Yenileniyor…';
+    try { detail.a = await analyze(detail.a.place, { force: true }); } catch (err) { toast(err.message); }
+    detail.sel = detail.a.rows.find(r => r.date.getTime() === t) || hourAt(detail.a.rows, new Date()) || detail.a.rows[0];
+    renderDetail(); toast('Güncellendi'); return;
+  }
   const ch = e.target.closest('.chart');
   if (ch) { const { d, i } = chartIndex(ch, e.clientX); detail.sel = d.rows[i]; renderDetail(); return; }
   if (e.target.id === 'wx-save-spot') {
@@ -875,9 +966,26 @@ function bindEvents() {
   $('#rank-custom').addEventListener('change', () => renderRank());
   $('#rank-me').addEventListener('change', () => renderRank());
   $('#rank-refresh').addEventListener('click', () => renderRank(true));
+  $('#spot-menu').addEventListener('click', onSpotMenu);
+  $('#spot-rename-form').addEventListener('submit', renameSpot);
+  {
+    let t = null, sx = 0, sy = 0, item = null;
+    const list = $('#rank-list');
+    list.addEventListener('pointerdown', e => {
+      item = e.target.closest('.rank-item'); if (!item) return;
+      sx = e.clientX; sy = e.clientY; clearTimeout(t);
+      t = setTimeout(() => { const s = spotById(item.dataset.key); if (s) { item.dataset.lp = Date.now(); openSpotMenu(s); } }, 550);
+    });
+    list.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 10) clearTimeout(t); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => list.addEventListener(ev, () => clearTimeout(t)));
+    list.addEventListener('contextmenu', e => { const it = e.target.closest('.rank-item'); if (it) { e.preventDefault(); const s = spotById(it.dataset.key); if (s && !justLongPressed(it)) { it.dataset.lp = Date.now(); openSpotMenu(s); } } });
+  }
+  // Sürekli güncel: uygulamaya dönünce ve 10 dakikada bir yenile
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && state.tab === 'map') renderRank(); });
+  setInterval(() => { if (!document.hidden && state.tab === 'map') renderRank(); }, TTL);
   $('#rank-list').addEventListener('click', e => {
     const it = e.target.closest('.rank-item');
-    if (!it) return;
+    if (!it || justLongPressed(it)) return;
     const a = state.analyses?.get(it.dataset.key);
     if (a) openDetail(a.place);
   });

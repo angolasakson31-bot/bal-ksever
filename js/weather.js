@@ -1,8 +1,10 @@
 // Hava ve deniz verisi: Open-Meteo (ücretsiz, anahtarsız, saatlik güncellenir).
-// Uygulamanın güncellenmesi gerekmez; her açılışta en güncel tahmin çekilir.
+// "best_match" modu, konuma göre en iyi sayısal hava modellerini (ECMWF, DWD ICON, Météo-France vb.)
+// otomatik seçip birleştirir. Uygulamanın güncellenmesi gerekmez; veriler her açılışta ve
+// 10 dakikada bir yeniden çekilir.
 const FORECAST = 'https://api.open-meteo.com/v1/forecast';
 const MARINE = 'https://marine-api.open-meteo.com/v1/marine';
-const TTL = 20 * 60000; // 20 dakika
+export const TTL = 10 * 60000; // 10 dakika
 const memCache = new Map();
 
 async function getJson(url) {
@@ -22,8 +24,8 @@ export async function getConditions(lat, lng, { force = false } = {}) {
   if (!force && hit && Date.now() - hit.fetchedAt < TTL) return hit;
 
   const base = `latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&forecast_days=7`;
-  const fUrl = `${FORECAST}?${base}&past_days=5&wind_speed_unit=kmh` +
-    '&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,visibility,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,cloud_cover,weather_code' +
+  const fUrl = `${FORECAST}?${base}&past_days=5&wind_speed_unit=kmh&models=best_match` +
+    '&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,visibility,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,cloud_cover,weather_code,is_day' +
     '&daily=sunrise,sunset';
   const mBase = `${MARINE}?${base}&past_days=2&hourly=wave_height,wave_direction,sea_surface_temperature`;
   const mUrl = `${mBase},wave_period,swell_wave_height,ocean_current_velocity,ocean_current_direction`;
@@ -76,6 +78,7 @@ function normalize(f, m) {
       rainProb: pick(h.precipitation_probability, i),
       cloud: pick(h.cloud_cover, i),
       code: pick(h.weather_code, i),
+      isDay: pick(h.is_day, i),
       wave: pick(m?.hourly?.wave_height, j),
       waveDir: pick(m?.hourly?.wave_direction, j),
       sst: pick(m?.hourly?.sea_surface_temperature, j),
@@ -111,4 +114,33 @@ export function weatherText(code) {
   if (code >= 3) return '☁️ Kapalı';
   if (code >= 1) return '⛅ Parçalı bulutlu';
   return '☀️ Açık';
+}
+
+// Saatlik hava simgesi (gece için ay)
+export function weatherIcon(code, isDay = 1) {
+  if (code == null) return '·';
+  if (code >= 95) return '⛈️';
+  if (code >= 85) return '🌨️';
+  if (code >= 80) return '🌦️';
+  if (code >= 71) return '❄️';
+  if (code >= 61) return '🌧️';
+  if (code >= 51) return '🌦️';
+  if (code >= 45) return '🌫️';
+  if (code >= 3) return '☁️';
+  if (code >= 2) return isDay ? '⛅' : '☁️';
+  if (code >= 1) return isDay ? '🌤️' : '🌙';
+  return isDay ? '☀️' : '🌙';
+}
+
+export function weatherWord(code) {
+  if (code == null) return '';
+  if (code >= 95) return 'Fırtına';
+  if (code >= 80) return 'Sağanak';
+  if (code >= 71) return 'Kar';
+  if (code >= 61) return 'Yağmur';
+  if (code >= 51) return 'Çisenti';
+  if (code >= 45) return 'Sis';
+  if (code >= 3) return 'Kapalı';
+  if (code >= 1) return 'Parçalı';
+  return 'Açık';
 }

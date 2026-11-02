@@ -45,7 +45,7 @@
         <button id="map-fit" class="btn small">🔍 Tüm meralar</button>
         <button id="map-add-spot" class="btn small primary">＋ Mera ekle</button>
       </div>
-      <p class="map-hint">Haritada bir yere dokunun: o noktanın balık skoru ve havası çıkar. Uzun basarak da mera ekleyebilirsiniz.</p>
+      <p class="map-hint">Meraya dokunun: saat saat hava ve balık tahmini. Meraya basılı tutun: adını değiştirin veya silin. Boş bir yere dokunun: o noktanın skoru; boş yere basılı tutun: yeni mera.</p>
 
       <h2 class="section-title">🎯 Meralarım: en iyiden en kötüye</h2>
       <div class="chips" id="rank-when">
@@ -185,6 +185,23 @@
       <button id="wx-close" class="icon-btn" aria-label="Kapat">✕</button>
     </div>
     <div id="wx-body"></div>
+  </dialog>
+
+  <!-- Meraya basılı tutunca açılan menü -->
+  <dialog id="spot-menu" class="sheet">
+    <h2 id="spot-menu-title">Mera</h2>
+    <form id="spot-rename-form" class="rename-row">
+      <input id="spot-rename" placeholder="Mera adı" required>
+      <button type="submit" class="btn primary">Kaydet</button>
+    </form>
+    <div class="sheet-actions">
+      <button class="btn" data-menu="detail" autofocus>🎯 Ayrıntılı tahmin</button>
+      <button class="btn" data-menu="catch">＋ Bu meraya av ekle</button>
+      <button class="btn" data-menu="edit">✏️ Tüm bilgileri düzenle</button>
+      <button class="btn" data-menu="directions">🧭 Yol tarifi</button>
+      <button class="btn danger" data-menu="delete">🗑️ Merayı sil</button>
+      <button class="btn" data-menu="close">Vazgeç</button>
+    </div>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
