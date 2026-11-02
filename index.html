@@ -56,15 +56,26 @@
       <h2 class="section-title">🎯 Meralarım: en iyiden en kötüye</h2>
       <div class="chips" id="rank-when">
         <button data-when="now" class="active">Şimdi</button>
-        <button data-when="h1">+1 saat</button>
-        <button data-when="h3">+3 saat</button>
-        <button data-when="h6">+6 saat</button>
-        <button data-when="h12">+12 saat</button>
+        <button data-when="o0.5">+½ saat</button>
+        <button data-when="o1">+1 saat</button>
+        <button data-when="o2">+2 saat</button>
+        <button data-when="o3">+3 saat</button>
+        <button data-when="o5">+5 saat</button>
+        <button data-when="o6">+6 saat</button>
+        <button data-when="o12">+12 saat</button>
+        <button data-when="trip">🚗 Gidip geleceğim</button>
         <button data-when="evening">Bu akşam</button>
         <button data-when="morning">Yarın sabah</button>
         <button data-when="tomorrowEvening">Yarın akşam</button>
         <button data-when="best24">24 saatin en iyisi</button>
         <button data-when="custom">📅 Gün/saat seç</button>
+      </div>
+      <div id="trip-row" class="card trip-row" hidden>
+        <div class="stepper"><span>Kaç saat sonra çıkacaksınız?</span>
+          <button type="button" data-step="go:-0.5">−</button><b id="trip-go">1</b><button type="button" data-step="go:0.5">＋</button></div>
+        <div class="stepper"><span>Kaç saat kalacaksınız?</span>
+          <button type="button" data-step="stay:-0.5">−</button><b id="trip-stay">4</b><button type="button" data-step="stay:0.5">＋</button></div>
+        <p class="muted" id="trip-text"></p>
       </div>
       <div id="rank-custom-row" class="filter-row" hidden>
         <input id="rank-custom" type="datetime-local">

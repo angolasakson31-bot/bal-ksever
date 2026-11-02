@@ -3,6 +3,7 @@ import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
 import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL } from './weather.js';
 import { scoreHours, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
+import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
 
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -410,7 +411,7 @@ async function deleteSpot() {
 
 // ————————————————— Tahmin: hava + balık skoru —————————————————
 const fmt = (v, d = 0) => v == null || Number.isNaN(v) ? '—' : Number(v).toFixed(d);
-const hh = d => `${String(d.getHours()).padStart(2, '0')}:00`;
+const hh = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 const dayShort = d => d.toLocaleDateString('tr-TR', { weekday: 'short' });
 const effectiveType = (place, cond) => place.water && place.water !== 'auto' ? place.water : (cond.seaDetected ? 'sea' : 'lake');
 
@@ -433,15 +434,14 @@ const scorePill = r => `<span class="score-pill" style="background:${scoreColor(
 
 // —— Sıralama ——
 let rankWhen = 'now';
-const WHEN_LABEL = { now: 'şu an', h1: '1 saat sonra', h3: '3 saat sonra', h6: '6 saat sonra', h12: '12 saat sonra',
+const WHEN_LABEL = { now: 'şu an', trip: 'gidiş–dönüş aralığı', 'o0.5': 'yarım saat sonra', o1: '1 saat sonra', o2: '2 saat sonra', o3: '3 saat sonra', o5: '5 saat sonra', o6: '6 saat sonra', o12: '12 saat sonra',
   evening: 'bu akşam', morning: 'yarın sabah', tomorrowEvening: 'yarın akşam', best24: '24 saatin en iyisi', custom: 'seçilen zaman' };
 
 function targetRow(a) {
   const now = new Date();
   const { rows, cond } = a;
   const sunOn = offset => cond.suns.find(s => s.rise.toDateString() === new Date(now.getTime() + offset * 864e5).toDateString());
-  const hours = { h1: 1, h3: 3, h6: 6, h12: 12 }[rankWhen];
-  if (hours) return hourAt(rows, new Date(now.getTime() + hours * 3600e3));
+  if (rankWhen.startsWith('o')) return rowAt(a, new Date(now.getTime() + parseFloat(rankWhen.slice(1)) * 3600e3));
   if (rankWhen === 'evening') {
     let s = sunOn(0);
     if (s && now > new Date(s.set.getTime() + 3600e3)) s = sunOn(1);
@@ -457,7 +457,21 @@ function targetRow(a) {
     const v = $('#rank-custom').value;
     return v ? hourAt(rows, new Date(v)) : null;
   }
-  return hourAt(rows, now);
+  return rowAt(a, now) || hourAt(rows, now);
+}
+
+// —— Gidip gelme (aralık) ——
+const trip = { go: 1, stay: 4 };
+try { Object.assign(trip, JSON.parse(ls('trip') || '{}')); } catch { /* yok */ }
+function tripWindow() {
+  const start = roundQ(new Date(Date.now() + trip.go * 3600e3));
+  return { start, end: new Date(start.getTime() + trip.stay * 3600e3) };
+}
+function renderTripRow() {
+  $('#trip-go').textContent = String(trip.go).replace('.', ',');
+  $('#trip-stay').textContent = String(trip.stay).replace('.', ',');
+  const { start, end } = tripWindow();
+  $('#trip-text').textContent = `Çıkış ${dayShort(start)} ${hh(start)} → dönüş ${dayShort(end)} ${hh(end)}. Meralar bu aralığın ortalama skoruna göre sıralanır.`;
 }
 
 let rankSeq = 0;
@@ -475,7 +489,12 @@ async function renderRank(force = false) {
   }
   const seq = ++rankSeq;
   if (!box.querySelector('.rank-item')) box.innerHTML = '<div class="empty">Meralar hesaplanıyor… 🎣</div>';
-  const results = await Promise.all(places.map(p => analyze(p, { force }).then(a => ({ a, r: targetRow(a) }), err => ({ place: p, err }))));
+  const tw = rankWhen === 'trip' ? tripWindow() : null;
+  const results = await Promise.all(places.map(p => analyze(p, { force }).then(a => {
+    if (!tw) return { a, r: targetRow(a) };
+    const t = tripSummary(a, tw.start, tw.end);
+    return t ? { a, trip: t, r: { ...t.best, score: t.avg, danger: t.danger, reasons: t.best.reasons } } : { a, r: null };
+  }, err => ({ place: p, err }))));
   if (seq !== rankSeq) return;
   state.analyses = new Map(results.filter(x => x.a).map(x => [x.a.place.key, x.a]));
   const ok = results.filter(x => x.r).sort((x, y) => (x.r.danger - y.r.danger) || (y.r.score - x.r.score));
@@ -488,6 +507,7 @@ async function renderRank(force = false) {
     `<p class="muted rank-head">${ok.length} mera · ${WHEN_LABEL[rankWhen]} için sıralandı · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}<br>Basılı tutun: adını değiştir / sil</p>` +
     ok.map((x, i) => {
       const { a, r } = x;
+      if (x.trip) return tripCard(x, i);
       const top = r.reasons.slice(0, 3).map(([v, t]) => `${v > 0 ? '＋' : '－'} ${esc(t)}`).join('<br>');
       const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
       return `<button class="rank-item" data-key="${esc(a.place.key)}">
@@ -502,6 +522,22 @@ async function renderRank(force = false) {
         </span></button>`;
     }).join('') +
     bad.map(x => `<div class="card"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
+}
+
+function tripCard(x, i) {
+  const { a, trip: t } = x;
+  const sp = speciesScores(t.best, a.type).slice(0, 3).map(s => s.name).join(', ');
+  return `<button class="rank-item" data-key="${esc(a.place.key)}">
+    <span class="rank-no">${i + 1}</span>
+    <span class="rank-score">${scorePill({ score: t.avg })}<small>ortalama</small></span>
+    <span class="rank-body">
+      <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
+      <span class="rank-time">${t.danger ? '⚠️ Aralıkta tehlikeli saat var · ' : ''}En iyi an: <b>${hh(t.best.date)}</b> (${fmt(t.best.score, 1)})</span>
+      <span class="trip-strip">${t.list.map(r => `<i style="background:${scoreColor(r.score)}" title="${hh(r.date)} · ${fmt(r.score, 1)}"></i>`).join('')}</span>
+      <span class="trip-axis"><span>${hh(t.list[0].date)}</span><span>${hh(t.list[t.list.length - 1].date)}</span></span>
+      <span class="rank-meta">${esc(summaryLine(t.best, a.type))}</span>
+      <span class="rank-meta">🐟 ${esc(sp)}</span>
+    </span></button>`;
 }
 
 // —— Grafikler (SVG, tek eksen, dokununca değer) ——
@@ -618,7 +654,9 @@ async function renameSpot(e) {
 
 // —— Nokta detayı ——
 let detail = null; // { a, day, sel }
-async function openDetail(place) {
+let isTripOpen = false;
+async function openDetail(place, fromTrip = false) {
+  isTripOpen = fromTrip;
   const dlg = $('#wx-dialog');
   $('#wx-title').textContent = place.name;
   $('#wx-sub').textContent = `${Number(place.lat).toFixed(4)}, ${Number(place.lng).toFixed(4)}`;
@@ -626,8 +664,11 @@ async function openDetail(place) {
   if (!dlg.open) dlg.showModal();
   try {
     const a = await analyze(place);
-    const now = hourAt(a.rows, new Date()) || a.rows[0];
-    detail = { a, day: now.date.toDateString(), sel: now };
+    const now = rowAt(a, new Date()) || hourAt(a.rows, new Date()) || a.rows[0];
+    const tw = rankWhen === 'trip' && isTripOpen ? tripWindow() : null;
+    const best = tw ? tripSummary(a, tw.start, tw.end)?.best : null;
+    const sel = best || now;
+    detail = { a, day: sel.date.toDateString(), sel, step: detail?.step || 30, trip: tw };
     renderDetail();
     $('#wx-dialog').scrollTop = 0;
   } catch (e) {
@@ -649,10 +690,17 @@ function renderDetail() {
   const moon = moonPhase(sel.date);
   const mt = moonTimes(sel.date, place.lat, place.lng);
   const sol = solunar(new Date(sel.date.getTime() + 30 * 60000), place.lat, place.lng);
-  const nowRow = hourAt(rows, new Date());
+  const isNow = Math.abs(sel.date - Date.now()) < 15 * 60000;
+  const selH = dayRows.includes(sel) ? sel : hourAt(dayRows, sel.date);
+  // Şu andan itibaren (veya gidiş–dönüş aralığı) ayrıntılı zaman şeridi
+  const fineFrom = detail.trip ? detail.trip.start : new Date();
+  const fineMin = detail.trip ? (detail.trip.end - detail.trip.start) / 60000 : 6 * 60;
+  const fine = slots(a, fineFrom, fineMin, detail.step);
+  const fineAvg = fine.length ? fine.reduce((x, r) => x + r.score, 0) / fine.length : null;
+  const fineBest = fine.length ? fine.reduce((b, r) => (r.score > b.score ? r : b)) : null;
   const spotId = place.key && place.key !== 'me' ? place.key : place.id;
   const isSpot = !!spotById(spotId);
-  const p3 = rows[rows.indexOf(sel) - 3]?.pressure;
+  const p3 = hourAt(rows, new Date(sel.date.getTime() - 3 * 3600e3))?.pressure;
   const trend = p3 == null ? '' : sel.pressure - p3 <= -0.6 ? '↘ düşüyor' : sel.pressure - p3 >= 0.6 ? '↗ yükseliyor' : '→ sabit';
   const species = speciesScores(sel, type);
   // Bugün için sadece önümüzdeki saatleri öner
@@ -685,8 +733,28 @@ function renderDetail() {
         <div>💧 %${fmt(sel.rainProb)} · ${fmt(sel.precip, 1)} mm</div></div>
     </div>
 
+    <div class="card fine-card"><h3>⏱️ ${detail.trip ? `Gidiş–dönüş: ${hh(detail.trip.start)} → ${hh(detail.trip.end)}` : 'Şu andan itibaren 6 saat'}</h3>
+      <div class="fine-head">
+        <span class="seg-mini">${[30, 15].map(m => `<button data-step="${m}" class="${detail.step === m ? 'active' : ''}">${m} dk</button>`).join('')}</span>
+        ${fineAvg != null ? `<span class="muted">ortalama <b>${fmt(fineAvg, 1)}</b> · en iyi an <b>${hh(fineBest.date)}</b> (${fmt(fineBest.score, 1)})</span>` : ''}
+      </div>
+      <div class="hours wx-strip">${fine.map(r => `<button class="hour wxh ${sel.slot && r.date.getTime() === sel.date.getTime() ? 'now' : ''}" data-slot="${r.date.getTime()}">
+        <div class="h">${hh(r.date)}</div>
+        <div class="ico">${weatherIcon(r.code, r.isDay)}</div>
+        <div class="t">${fmt(r.temp)}°</div>
+        <div class="rain" title="Yağmur ihtimali %${fmt(r.rainProb)}"><span style="height:${Math.max(0, Math.min(100, r.rainProb ?? 0))}%"></span></div>
+        <div class="rp">${(r.rainProb ?? 0) >= 20 ? `%${fmt(r.rainProb)}` : '&nbsp;'}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}mm/sa` : ''}</div>
+        <div class="w">${arrow(r.windDir)} ${fmt(r.wind)}</div>
+        <div class="g">hamle ${fmt(r.gust)}</div>
+        ${type === 'sea' && r.wave != null ? `<div class="g">🌊 ${fmt(r.wave, 1)}m</div>` : ''}
+        <div class="sc ${scoreClass(r.score)}">🎣 ${fmt(r.score, 1)}</div>
+        ${r.danger ? '<div>⚠️</div>' : ''}
+      </button>`).join('')}</div>
+      <p class="chart-note">${fine.some(r => r.fine) ? '15 dakikalık model verisi kullanılıyor.' : 'Saatlik verilerin arası hesaplanarak gösteriliyor.'} Bir ana dokunarak seçin.</p>
+    </div>
+
     <div class="card"><h3>🌤️ Saat saat hava</h3>
-      <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === sel ? 'now' : ''}" data-t="${r.date.getTime()}">
+      <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === selH && !sel.slot ? 'now' : ''}" data-t="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
         <div class="ico">${weatherIcon(r.code, r.isDay)}</div>
         <div class="t">${fmt(r.temp)}°</div>
@@ -704,7 +772,7 @@ function renderDetail() {
     <div class="card score-card">
       <div class="score-ring" style="border-color:${scoreColor(sel.score)}">${fmt(sel.score, 1)}<small>/ 10</small></div>
       <div class="score-text"><strong>${scoreLabel(sel.score, sel.danger)}</strong>
-        <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${hh(sel.date)}${sel === nowRow ? ' · şu an' : ''}</div>
+        <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${hh(sel.date)}${isNow ? ' · şu an' : ''}</div>
         <ul>${sel.reasons.map(([v, t]) => `<li>${v > 0 ? '＋' : '－'} ${esc(t)}</li>`).join('')}</ul>
       </div>
     </div>
@@ -721,13 +789,13 @@ function renderDetail() {
     </div>
 
     <div class="card"><h3>📈 Grafikler (${dayRows[0]?.date.toLocaleDateString('tr-TR', { weekday: 'long' }) || ''})</h3>
-      <h4>Balık skoru</h4>${lineChart('score', dayRows, [{ key: 'score', label: 'Skor', color: C1 }], { decimals: 1, sel })}
-      <h4>Rüzgar (km/s)</h4>${lineChart('wind', dayRows, [{ key: 'wind', label: 'Rüzgar', color: C1 }, { key: 'gust', label: 'Hamle', color: C2 }], { unit: ' km/s', sel })}
+      <h4>Balık skoru</h4>${lineChart('score', dayRows, [{ key: 'score', label: 'Skor', color: C1 }], { decimals: 1, sel: selH })}
+      <h4>Rüzgar (km/s)</h4>${lineChart('wind', dayRows, [{ key: 'wind', label: 'Rüzgar', color: C1 }, { key: 'gust', label: 'Hamle', color: C2 }], { unit: ' km/s', sel: selH })}
       ${type === 'sea' && dayRows.some(r => r.wave != null)
-        ? `<h4>Dalga (m)</h4>${lineChart('wave', dayRows, [{ key: 'wave', label: 'Dalga', color: C1 }, ...(dayRows.some(r => r.swell != null) ? [{ key: 'swell', label: 'Soluğan', color: C2 }] : [])], { unit: ' m', decimals: 1, sel })}`
+        ? `<h4>Dalga (m)</h4>${lineChart('wave', dayRows, [{ key: 'wave', label: 'Dalga', color: C1 }, ...(dayRows.some(r => r.swell != null) ? [{ key: 'swell', label: 'Soluğan', color: C2 }] : [])], { unit: ' m', decimals: 1, sel: selH })}`
         : `<h4>Yağış (mm)</h4>${lineChart('rain', dayRows, [{ key: 'precip', label: 'Yağış', color: C1 }], { unit: ' mm', decimals: 1, sel, bars: true })}`}
-      <h4>Sıcaklık (°C)</h4>${lineChart('temp', dayRows, [{ key: 'temp', label: 'Hava', color: C1 }, { key: 'waterTemp', label: type === 'sea' ? 'Deniz' : 'Su (tahmini)', color: C2 }], { unit: ' °C', min0: false, sel })}
-      <h4>Basınç (hPa)</h4>${lineChart('pres', dayRows, [{ key: 'pressure', label: 'Basınç', color: C1 }], { unit: ' hPa', min0: false, sel })}
+      <h4>Sıcaklık (°C)</h4>${lineChart('temp', dayRows, [{ key: 'temp', label: 'Hava', color: C1 }, { key: 'waterTemp', label: type === 'sea' ? 'Deniz' : 'Su (tahmini)', color: C2 }], { unit: ' °C', min0: false, sel: selH })}
+      <h4>Basınç (hPa)</h4>${lineChart('pres', dayRows, [{ key: 'pressure', label: 'Basınç', color: C1 }], { unit: ' hPa', min0: false, sel: selH })}
     </div>
 
     <div class="card"><h3>🌤️ Ayrıntılı hava (${hh(sel.date)})</h3><div class="metrics">
@@ -773,11 +841,15 @@ async function onDetailClick(e) {
   }
   const h = e.target.closest('.hour[data-t]');
   if (h) { detail.sel = detail.a.rows.find(r => r.date.getTime() === +h.dataset.t); renderDetail(); return; }
+  const sl = e.target.closest('[data-slot]');
+  if (sl) { detail.sel = rowAt(detail.a, new Date(+sl.dataset.slot)); detail.day = detail.sel.date.toDateString(); renderDetail(); return; }
+  const st = e.target.closest('.seg-mini [data-step]');
+  if (st) { detail.step = +st.dataset.step; renderDetail(); return; }
   if (e.target.id === 'wx-refresh') {
     const t = detail.sel.date.getTime();
     e.target.textContent = 'Yenileniyor…';
     try { detail.a = await analyze(detail.a.place, { force: true }); } catch (err) { toast(err.message); }
-    detail.sel = detail.a.rows.find(r => r.date.getTime() === t) || hourAt(detail.a.rows, new Date()) || detail.a.rows[0];
+    detail.sel = (detail.sel.slot ? rowAt(detail.a, new Date(t)) : detail.a.rows.find(r => r.date.getTime() === t)) || hourAt(detail.a.rows, new Date()) || detail.a.rows[0];
     renderDetail(); toast('Güncellendi'); return;
   }
   const ch = e.target.closest('.chart');
@@ -796,7 +868,7 @@ async function onDetailWaterChange(e) {
   if (spot) { await db.put('spots', { ...spot, water: place.water }); await loadData(); refreshAll(); }
   const t = detail.sel.date.getTime();
   detail.a = await analyze(place);
-  detail.sel = detail.a.rows.find(r => r.date.getTime() === t) || detail.a.rows[0];
+  detail.sel = (detail.sel.slot ? rowAt(detail.a, new Date(t)) : detail.a.rows.find(r => r.date.getTime() === t)) || detail.a.rows[0];
   renderDetail();
 }
 
@@ -806,7 +878,7 @@ async function mapPointPopup(latlng) {
   try {
     const place = { lat: latlng.lat, lng: latlng.lng, name: 'Seçilen nokta', water: 'auto' };
     const a = await analyze(place);
-    const r = hourAt(a.rows, new Date());
+    const r = rowAt(a, new Date()) || hourAt(a.rows, new Date());
     const best = a.rows.filter(x => x.date >= new Date() && x.date <= new Date(Date.now() + 864e5)).reduce((b, x) => (!b || x.score > b.score ? x : b), null);
     pop.setContent(`<div class="pt-pop">${scorePill(r)} <b>${esc(scoreLabel(r.score, r.danger))}</b><br>
       <small>${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label} · şu an</small><br>
@@ -1033,6 +1105,8 @@ function bindEvents() {
     rankWhen = b.dataset.when;
     document.querySelectorAll('#rank-when button').forEach(x => x.classList.toggle('active', x === b));
     $('#rank-custom-row').hidden = rankWhen !== 'custom';
+    $('#trip-row').hidden = rankWhen !== 'trip';
+    if (rankWhen === 'trip') renderTripRow();
     if (rankWhen === 'custom' && !$('#rank-custom').value) {
       const d = new Date(Date.now() + 864e5); d.setHours(18, 0, 0, 0);
       $('#rank-custom').value = toLocalInput(d);
@@ -1040,6 +1114,13 @@ function bindEvents() {
     renderRank();
   });
   $('#rank-custom').addEventListener('change', () => renderRank());
+  $('#trip-row').addEventListener('click', e => {
+    const b = e.target.closest('[data-step]'); if (!b) return;
+    const [k, d] = b.dataset.step.split(':');
+    trip[k] = Math.round(Math.max(k === 'go' ? 0 : 0.5, Math.min(k === 'go' ? 48 : 24, trip[k] + parseFloat(d))) * 2) / 2;
+    try { localStorage.setItem('trip', JSON.stringify(trip)); } catch { /* yok */ }
+    renderTripRow(); renderRank();
+  });
   $('#rank-me').addEventListener('change', () => renderRank());
   $('#rank-refresh').addEventListener('click', () => renderRank(true));
   $('#spot-menu').addEventListener('click', onSpotMenu);
@@ -1063,7 +1144,7 @@ function bindEvents() {
     const it = e.target.closest('.rank-item');
     if (!it || justLongPressed(it)) return;
     const a = state.analyses?.get(it.dataset.key);
-    if (a) openDetail(a.place);
+    if (a) openDetail(a.place, rankWhen === 'trip');
   });
   $('#wx-close').addEventListener('click', () => $('#wx-dialog').close());
   $('#wx-body').addEventListener('click', onDetailClick);
