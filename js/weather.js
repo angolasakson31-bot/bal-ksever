@@ -23,12 +23,15 @@ export async function getConditions(lat, lng, { force = false } = {}) {
 
   const base = `latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&forecast_days=7`;
   const fUrl = `${FORECAST}?${base}&past_days=5&wind_speed_unit=kmh` +
-    '&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,cloud_cover,weather_code' +
+    '&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,visibility,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,cloud_cover,weather_code' +
     '&daily=sunrise,sunset';
-  const mUrl = `${MARINE}?${base}&past_days=2&hourly=wave_height,wave_direction,sea_surface_temperature`;
+  const mBase = `${MARINE}?${base}&past_days=2&hourly=wave_height,wave_direction,sea_surface_temperature`;
+  const mUrl = `${mBase},wave_period,swell_wave_height,ocean_current_velocity,ocean_current_direction`;
 
   try {
-    const [f, m] = await Promise.all([getJson(fUrl), getJson(mUrl).catch(() => null)]);
+    // Ek deniz değişkenleri bir noktada desteklenmezse temel değişkenlerle tekrar dene
+    const marine = getJson(mUrl).catch(() => getJson(mBase)).catch(() => null);
+    const [f, m] = await Promise.all([getJson(fUrl), marine]);
     const cond = normalize(f, m);
     cond.fetchedAt = Date.now();
     memCache.set(k, cond);
@@ -61,6 +64,10 @@ function normalize(f, m) {
     return {
       date: localDate(t),
       temp: h.temperature_2m[i],
+      feels: pick(h.apparent_temperature, i),
+      humidity: pick(h.relative_humidity_2m, i),
+      visibility: pick(h.visibility, i),
+      uv: pick(h.uv_index, i),
       wind: h.wind_speed_10m[i],
       windDir: h.wind_direction_10m[i],
       gust: h.wind_gusts_10m[i],
@@ -72,6 +79,10 @@ function normalize(f, m) {
       wave: pick(m?.hourly?.wave_height, j),
       waveDir: pick(m?.hourly?.wave_direction, j),
       sst: pick(m?.hourly?.sea_surface_temperature, j),
+      wavePeriod: pick(m?.hourly?.wave_period, j),
+      swell: pick(m?.hourly?.swell_wave_height, j),
+      current: pick(m?.hourly?.ocean_current_velocity, j),
+      currentDir: pick(m?.hourly?.ocean_current_direction, j),
     };
   });
   const suns = f.daily.time.map((d, i) => ({ day: d, rise: localDate(f.daily.sunrise[i]), set: localDate(f.daily.sunset[i]) }));
