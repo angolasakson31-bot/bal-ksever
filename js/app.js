@@ -394,8 +394,8 @@ function renderMapMarkers() {
     });
     marker.on('click', () => {
       if (justLongPressed(marker.getElement())) return;
-      // Sıralamadaki merada ilk dokunuş özeti getirir, ikinci dokunuş detayı açar
-      if (selKey !== s.id && sumHtml.has(s.id)) selectCard(s.id, { pan: false });
+      // Kartı olan merada ilk dokunuş kartı getirir, ikinci dokunuş detayı açar
+      if (selKey !== s.id && $(`#rank-list .rank-item[data-key="${CSS.escape(s.id)}"]`)) selectCard(s.id, { scroll: true, pan: false });
       else openDetail({ ...s, key: s.id });
     });
     spotMarkers.set(s.id, marker);
@@ -735,14 +735,13 @@ async function renderRank(force = false) {
     catch (e) { toast(e.message); }
   }
   if (!places.length) {
-    box.innerHTML = '';
-    $('#rank-sum').innerHTML = `<div class="sum-card empty">🎯 Henüz mera yok. Haritada balık tuttuğunuz yere <b>basılı tutun</b>
+    box.innerHTML = `<div class="rank-item empty">🎯 Henüz mera yok. Haritada balık tuttuğunuz yere <b>basılı tutun</b>
       veya <b>＋</b> düğmesine dokunun. Meralar burada en iyiden kötüye sıralanır.</div>`;
-    selKey = null;
+    $('#rank-dots').innerHTML = '';
     return;
   }
   const seq = ++rankSeq;
-  if (!box.querySelector('.chip')) { box.innerHTML = ''; $('#rank-sum').innerHTML = '<div class="sum-card empty">Meralar hesaplanıyor… 🎣</div>'; }
+  if (!box.querySelector('.rank-item')) box.innerHTML = '<div class="rank-item empty">Meralar hesaplanıyor… 🎣</div>';
   const tw = rankWhen === 'trip' ? tripWindow() : null;
   const results = await Promise.all(places.map(p => analyze(p, { force }).then(a => {
     if (!tw) return { a, r: targetRow(a) };
@@ -767,59 +766,72 @@ async function renderRank(force = false) {
   renderMapMarkers();
   const offline = results.some(x => x.a?.cond.offline);
   const total = ok.length;
-  sumHtml.clear();
-  ok.forEach((x, i) => sumHtml.set(x.a.place.key, x.trip ? tripCard(x, i, total) : spotSummary(x, i, total)));
-  box.innerHTML = ok.map((x, i) => {
-    const nm = x.a.place.name.replace(/^📍\s*/, '');
-    return `<button class="rank-item chip" data-key="${esc(x.a.place.key)}"><b class="cn">${i + 1}</b>` +
-      `<span class="cs" style="background:${scoreColor(x.v)}">${fmt(x.v, 1)}</span><span class="cname">${x.a.place.key === 'me' ? '📍 ' : ''}${esc(nm)}</span>${x.r.danger ? '⚠️' : ''}</button>`;
-  }).join('') + bad.map(x => `<span class="chip bad" title="${esc(x.err?.message || 'Bu zaman için tahmin yok')}">⚠️ ${esc((x.a?.place || x.place).name)}</span>`).join('');
+  box.innerHTML =
+    ok.map((x, i) => {
+      const { a, r } = x;
+      if (x.trip) return tripCard(x, i, total);
+      const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
+      return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(r)}
+        <span class="rank-top">
+          <span class="rank-no">${i + 1}<small>/${total}</small></span>
+          ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
+        </span>
+        <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
+        <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
+        ${miniWx(a, r.date, 6)}
+        <span class="rank-meta">🐟 ${esc(sp)}</span>
+        ${catchLine(a.place)}
+      </button>`;
+    }).join('') +
+    bad.map(x => `<div class="rank-item bad"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
   $('#when-label').textContent = '⏱ ' + WHEN_SHORT[rankWhen];
   $('#mode-label').textContent = combo ? '🎣💨 Balık+rüzgar' : '🎣 Balık';
   $('.map-bar').classList.toggle('offline', offline);
   $('#rank-refresh').title = `Yenile · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}${offline ? ' (çevrimdışı)' : ''}`;
-  const keep = selKey && sumHtml.has(selKey);
-  selectCard(keep ? selKey : ok[0]?.a.place.key, { pan: false, force: true });
+  renderDots();
+  // Önceki seçili kart duruyorsa ona dön, yoksa ilk kart
+  const keep = selKey && box.querySelector(`.rank-item[data-key="${CSS.escape(selKey)}"]`);
+  selectCard(keep ? selKey : ok[0]?.a.place.key, { scroll: true, pan: false, instant: true });
 }
 
-// Seçili meranın kısa özeti (dokununca detay)
-function spotSummary(x, i, total) {
-  const { a, r } = x;
-  const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
-  return `<button class="sum-card" data-key="${esc(a.place.key)}">
-    <span class="sum-row">
-      <span class="sum-score" style="background:${scoreColor(x.v)}">${fmt(x.v, 1)}</span>
-      <span class="sum-main">
-        <span class="sum-name">${esc(a.place.name)}</span>
-        <span class="sum-sub">${i + 1}. sırada · ${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label} · ${scoreShort(x.v, r.danger)}</span>
-      </span>
-      <span class="sum-go">›</span>
-    </span>
-    <span class="sum-line">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${weatherIcon(r.code, r.isDay)} ${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
-    <span class="sum-line">🐟 ${esc(sp)}${r.windScore != null ? ` · 💨 rüzgar <i class="wdot" style="background:${scoreColor(r.windScore)}"></i> ${fmt(r.windScore, 1)}` : ''}</span>
-    ${catchLine(a.place)}
-  </button>`;
-}
-
-// —— Şerit ↔ özet ↔ harita ——
+// —— Kart ↔ harita eşleşmesi ——
 let selKey = null;
-const sumHtml = new Map();
 const WHEN_SHORT = { now: 'Şimdi', trip: 'Gidip geleceğim', 'o0.5': '+½ saat', o1: '+1 saat', o2: '+2 saat', o3: '+3 saat', o5: '+5 saat', o6: '+6 saat', o12: '+12 saat',
   evening: 'Bu akşam', morning: 'Yarın sabah', tomorrowEvening: 'Yarın akşam', best24: '24 saatin en iyisi', custom: 'Seçilen zaman' };
-function selectCard(key, { pan = true, force = false } = {}) {
-  if (!key || !sumHtml.has(key)) return;
+const cards = () => [...$('#rank-list').querySelectorAll('.rank-item[data-key]')];
+function renderDots() {
+  const n = cards().length;
+  $('#rank-dots').innerHTML = n > 1 && n <= 12 ? cards().map(c => `<i data-dot="${esc(c.dataset.key)}"></i>`).join('') : '';
+}
+function selectCard(key, { scroll = false, pan = true, instant = false } = {}) {
+  if (!key) return;
+  const card = cards().find(c => c.dataset.key === key);
+  if (!card) return;
   const changed = selKey !== key;
   selKey = key;
-  if (changed || force) $('#rank-sum').innerHTML = sumHtml.get(key);
-  const chips = [...$('#rank-list').querySelectorAll('.chip[data-key]')];
-  chips.forEach(c => c.classList.toggle('sel', c.dataset.key === key));
-  const chip = chips.find(c => c.dataset.key === key), list = $('#rank-list');
-  if (chip && changed) list.scrollTo({ left: chip.offsetLeft - (list.clientWidth - chip.offsetWidth) / 2, behavior: 'smooth' });
+  cards().forEach(c => c.classList.toggle('sel', c === card));
+  document.querySelectorAll('#rank-dots i').forEach(d => d.classList.toggle('on', d.dataset.dot === key));
+  if (scroll) {
+    const list = $('#rank-list');
+    programmatic = Date.now();
+    list.scrollTo({ left: card.offsetLeft - (list.clientWidth - card.offsetWidth) / 2, behavior: instant ? 'auto' : 'smooth' });
+  }
   for (const [id, m] of spotMarkers) m.getElement()?.querySelector('.mk')?.classList.toggle('sel', id === key);
   if (pan && changed && map) {
     const a = state.analyses?.get(key);
     if (a) map.panTo([a.place.lat, a.place.lng], { animate: true });
   }
+}
+let programmatic = 0;
+function onCarouselScroll() {
+  if (Date.now() - programmatic < 700) return; // kendi kaydırmamız
+  const list = $('#rank-list');
+  const mid = list.scrollLeft + list.clientWidth / 2;
+  const best = cards().reduce((b, c) => {
+    const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+    return !b || d < b.d ? { c, d } : b;
+  }, null);
+  if (best) selectCard(best.c.dataset.key);
 }
 
 function catchLine(place) {
@@ -834,19 +846,18 @@ function tripCard(x, i, total) {
   const b = x.show;
   const val = modeVal;
   const sp = speciesScores(b, a.type).slice(0, 3).map(s => s.name).join(', ');
-  return `<button class="sum-card" data-key="${esc(a.place.key)}">
-    <span class="sum-row">
-      <span class="sum-score" style="background:${scoreColor(x.v)}">${fmt(x.v, 1)}</span>
-      <span class="sum-main">
-        <span class="sum-name">${esc(a.place.name)}</span>
-        <span class="sum-sub">${i + 1}. sırada · ${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label} · aralık ortalaması</span>
-      </span>
-      <span class="sum-go">›</span>
+  return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge({ ...b, windScore: t.avgWind })}
+    <span class="rank-top">
+      <span class="rank-no">${i + 1}<small>/${total}</small></span>
+      ${scorePill({ score: x.v })}<span class="rank-lbl">ortalama</span>
     </span>
-    <span class="sum-line">${t.danger ? '⚠️ Aralıkta tehlikeli saat var · ' : ''}En iyi an: <b>${hh(b.date)}</b> (${fmt(val(b), 1)})</span>
+    <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
+    <span class="rank-time">${t.danger ? '⚠️ Aralıkta tehlikeli saat var · ' : ''}En iyi an: <b>${hh(b.date)}</b> (${fmt(val(b), 1)})</span>
     <span class="trip-strip">${t.list.map(r => `<i style="background:${scoreColor(val(r))}" title="${hh(r.date)} · ${fmt(val(r), 1)}"></i>`).join('')}</span>
     <span class="trip-axis"><span>${hh(t.list[0].date)}</span><span>${hh(t.list[t.list.length - 1].date)}</span></span>
-    <span class="sum-line">🐟 ${esc(sp)}</span>
+    <span class="rank-meta">${esc(summaryLine(b, a.type))}</span>
+    <span class="rank-meta">🐟 ${esc(sp)}</span>
+    ${catchLine(a.place)}
   </button>`;
 }
 
@@ -1601,20 +1612,20 @@ function bindEvents() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.tab === 'map') renderRank(); });
   setInterval(() => { if (!document.hidden && state.tab === 'map') renderRank(); }, TTL);
   // Kaydırma (ör. 24 saatlik şerit) dokunma sayılmasın
-  let downXY = null, swiped = false;
+  let downXY = null, swiped = false, scrollT = null;
   $('#rank-list').addEventListener('pointerdown', e => { downXY = [e.clientX, e.clientY]; swiped = false; });
   $('#rank-list').addEventListener('pointermove', e => { if (downXY && Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 10) swiped = true; });
   $('#rank-list').addEventListener('scroll', () => { swiped = true; }, true);
   $('#rank-list').addEventListener('click', e => {
-    const it = e.target.closest('.chip[data-key]');
+    const it = e.target.closest('.rank-item');
     if (!it || justLongPressed(it) || swiped) { swiped = false; return; }
-    selectCard(it.dataset.key);
-  });
-  $('#rank-sum').addEventListener('click', e => {
-    const it = e.target.closest('.sum-card[data-key]'); if (!it) return;
     const a = state.analyses?.get(it.dataset.key);
-    if (a) openDetail(a.place, rankWhen === 'trip');
+    if (!a) return;
+    if (selKey !== it.dataset.key) selectCard(it.dataset.key, { scroll: true });
+    openDetail(a.place, rankWhen === 'trip');
   });
+  $('#rank-list').addEventListener('scroll', () => { clearTimeout(scrollT); scrollT = setTimeout(onCarouselScroll, 90); }, { passive: true });
+  $('#rank-dots').addEventListener('click', e => { const d = e.target.closest('[data-dot]'); if (d) selectCard(d.dataset.dot, { scroll: true }); });
   document.querySelectorAll('[data-open-rank]').forEach(b => b.addEventListener('click', () => $('#rank-dialog').showModal()));
   $('#rank-dialog-close').addEventListener('click', () => $('#rank-dialog').close());
   $('#rank-dialog').addEventListener('click', e => { if (e.target === $('#rank-dialog')) $('#rank-dialog').close(); });
