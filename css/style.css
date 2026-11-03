@@ -400,3 +400,8 @@ dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radiu
 .score-card .score-text { padding-top: 14px; }
 .wind-line { font-size: .8rem; color: var(--text-2); margin: 8px 0 0; }
 .pt-pop .wind-badge { position: static; }
+
+/* Sıralama türü seçimi */
+.mode-row { margin-bottom: 4px; }
+.mode-row .seg-mini button { padding: 8px 14px; font-size: .88rem; }
+.mode-help { margin: 4px 0 10px; font-size: .8rem; line-height: 1.4; }

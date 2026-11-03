@@ -474,6 +474,20 @@ function summaryLine(r, type) {
 // Köşedeki küçük rüzgar puanı rozeti
 const windBadge = r => r.windScore == null ? '' : `<span class="wind-badge" title="Rüzgar puanı: ${esc((r.windNotes || []).join(' · '))}">` +
   `${arrow(r.windDir)} 💨 <i class="wdot" style="background:${scoreColor(r.windScore)}"></i><b>${fmt(r.windScore, 1)}</b></span>`;
+const fishBadge = r => `<span class="wind-badge" title="Balık puanı">🎣 <i class="wdot" style="background:${scoreColor(r.score)}"></i><b>${fmt(r.score, 1)}</b></span>`;
+const windShort = v => v == null ? '—' : v >= 7 ? 'rüzgar iyi' : v >= 4.5 ? 'rüzgar orta' : 'rüzgar kötü';
+
+// Sıralama türü: balık puanı (ilk puanlama) veya rüzgar puanı
+let rankMode = ls('rankMode') === 'wind' ? 'wind' : 'fish';
+const MODE_HELP = {
+  fish: '🎣 <b>Balık puanı</b>: o anda balık tutma ihtimali. Su sıcaklığı, ışık (alacakaranlık/gece), dalga, rüzgar hızı, yağış, basınç ve ay hesaba katılır. Köşedeki 💨 rozet rüzgar puanıdır.',
+  wind: '💨 <b>Rüzgar puanı</b>: sadece rüzgar şartları. Hız, hamle, dalga, lodos/poyraz ve sıcak/soğuk rüzgar etkisi. Atış rahatlığı ve güvenlik için bakın. Köşedeki 🎣 rozet balık puanıdır.',
+};
+function renderModeToggle() {
+  document.querySelectorAll('#rank-mode [data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === rankMode));
+  $('#rank-mode-help').innerHTML = MODE_HELP[rankMode];
+}
+
 const scorePill = r => `<span class="score-pill" style="background:${scoreColor(r.score)}">${fmt(r.score, 1)}</span>`;
 
 // —— Sıralama ——
@@ -541,22 +555,28 @@ async function renderRank(force = false) {
   }, err => ({ place: p, err }))));
   if (seq !== rankSeq) return;
   state.analyses = new Map(results.filter(x => x.a).map(x => [x.a.place.key, x.a]));
-  const ok = results.filter(x => x.r).sort((x, y) => (x.r.danger - y.r.danger) || (y.r.score - x.r.score));
+  const wind = rankMode === 'wind';
+  for (const x of results) {
+    if (!x.r) continue;
+    x.show = x.trip ? (wind ? x.trip.bestWind : x.trip.best) : x.r;           // gösterilecek an
+    x.v = x.trip ? (wind ? x.trip.avgWind : x.trip.avg) : (wind ? x.r.windScore : x.r.score);
+  }
+  const ok = results.filter(x => x.r).sort((x, y) => (x.r.danger - y.r.danger) || ((y.v ?? -1) - (x.v ?? -1)));
   const bad = results.filter(x => !x.r);
   rankInfo.clear();
-  ok.forEach((x, i) => { if (x.a.place.key !== 'me') rankInfo.set(x.a.place.key, { rank: i + 1, score: x.r.score, danger: x.r.danger }); });
+  ok.forEach((x, i) => { if (x.a.place.key !== 'me') rankInfo.set(x.a.place.key, { rank: i + 1, score: x.v ?? 0, danger: x.r.danger }); });
   renderMapMarkers();
   const offline = results.some(x => x.a?.cond.offline);
   box.innerHTML = (offline ? '<p class="warn">Çevrimdışı: kayıtlı son veriler gösteriliyor.</p>' : '') +
-    `<p class="muted rank-head">${ok.length} mera · ${WHEN_LABEL[rankWhen]} için sıralandı · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}<br>Basılı tutun: adını değiştir / sil</p>` +
+    `<p class="muted rank-head">${ok.length} mera · ${wind ? '💨 rüzgar' : '🎣 balık'} puanına göre · ${WHEN_LABEL[rankWhen]} · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}<br>Basılı tutun: adını değiştir / sil</p>` +
     ok.map((x, i) => {
       const { a, r } = x;
       if (x.trip) return tripCard(x, i);
-      const top = r.reasons.slice(0, 3).map(([v, t]) => `${v > 0 ? '＋' : '－'} ${esc(t)}`).join('<br>');
+      const top = wind ? (r.windNotes || []).map(esc).join('<br>') : r.reasons.slice(0, 3).map(([v, t]) => `${v > 0 ? '＋' : '－'} ${esc(t)}`).join('<br>');
       const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
-      return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(r)}
+      return `<button class="rank-item" data-key="${esc(a.place.key)}">${wind ? fishBadge(r) : windBadge(r)}
         <span class="rank-no">${i + 1}</span>
-        <span class="rank-score">${scorePill(r)}<small>${scoreShort(r.score, r.danger)}</small></span>
+        <span class="rank-score">${scorePill({ score: x.v ?? 0 })}<small>${wind ? windShort(x.v) : scoreShort(r.score, r.danger)}</small></span>
         <span class="rank-body">
           <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
           <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)}</span>
@@ -570,16 +590,19 @@ async function renderRank(force = false) {
 
 function tripCard(x, i) {
   const { a, trip: t } = x;
+  const wind = rankMode === 'wind';
+  const b = x.show;
+  const val = r => (wind ? r.windScore : r.score) ?? 0;
   const sp = speciesScores(t.best, a.type).slice(0, 3).map(s => s.name).join(', ');
-  return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(t.best)}
+  return `<button class="rank-item" data-key="${esc(a.place.key)}">${wind ? fishBadge({ score: t.avg }) : windBadge({ ...t.best, windScore: t.avgWind })}
     <span class="rank-no">${i + 1}</span>
-    <span class="rank-score">${scorePill({ score: t.avg })}<small>ortalama</small></span>
+    <span class="rank-score">${scorePill({ score: x.v ?? 0 })}<small>${wind ? 'rüzgar ort.' : 'ortalama'}</small></span>
     <span class="rank-body">
       <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
-      <span class="rank-time">${t.danger ? '⚠️ Aralıkta tehlikeli saat var · ' : ''}En iyi an: <b>${hh(t.best.date)}</b> (${fmt(t.best.score, 1)})</span>
-      <span class="trip-strip">${t.list.map(r => `<i style="background:${scoreColor(r.score)}" title="${hh(r.date)} · ${fmt(r.score, 1)}"></i>`).join('')}</span>
+      <span class="rank-time">${t.danger ? '⚠️ Aralıkta tehlikeli saat var · ' : ''}En iyi ${wind ? 'rüzgar' : 'an'}: <b>${hh(b.date)}</b> (${fmt(val(b), 1)})</span>
+      <span class="trip-strip">${t.list.map(r => `<i style="background:${scoreColor(val(r))}" title="${hh(r.date)} · ${fmt(val(r), 1)}"></i>`).join('')}</span>
       <span class="trip-axis"><span>${hh(t.list[0].date)}</span><span>${hh(t.list[t.list.length - 1].date)}</span></span>
-      <span class="rank-meta">${esc(summaryLine(t.best, a.type))}</span>
+      <span class="rank-meta">${esc(summaryLine(b, a.type))}</span>
       <span class="rank-meta">🐟 ${esc(sp)}</span>
     </span></button>`;
 }
@@ -1161,6 +1184,13 @@ function bindEvents() {
     renderRank();
   });
   $('#rank-custom').addEventListener('change', () => renderRank());
+  renderModeToggle();
+  $('#rank-mode').addEventListener('click', e => {
+    const b = e.target.closest('[data-mode]'); if (!b) return;
+    rankMode = b.dataset.mode;
+    try { localStorage.setItem('rankMode', rankMode); } catch { /* yok */ }
+    renderModeToggle(); renderRank();
+  });
   $('#trip-row').addEventListener('click', e => {
     const b = e.target.closest('[data-step]'); if (!b) return;
     const [k, d] = b.dataset.step.split(':');
