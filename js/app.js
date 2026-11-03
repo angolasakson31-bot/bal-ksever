@@ -488,7 +488,7 @@ function miniWx(a, from) {
   for (let k = 0; k < 6; k++) {
     const r = rowAt(a, new Date(from.getTime() + k * 3600e3));
     if (!r) break;
-    cells.push(`<span class="mc"><span class="mt">${hh(r.date)}</span><span class="mi">${weatherIcon(r.code, r.isDay)}</span>` +
+    cells.push(`<span class="mc"><span class="mt">${hh(r.date)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}</span>` +
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
       `<span class="mr">${(r.rainProb ?? 0) >= 20 ? `💧${fmt(r.rainProb)}` : '&nbsp;'}</span></span>`);
   }
@@ -827,7 +827,7 @@ function renderDetail() {
       </div>
       <div class="hours wx-strip">${fine.map(r => `<button class="hour wxh ${sel.slot && r.date.getTime() === sel.date.getTime() ? 'now' : ''}" data-slot="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
-        <div class="ico">${weatherIcon(r.code, r.isDay)}</div>
+        <div class="ico">${weatherIcon(r.code, r.isDay)}</div><div class="wword">${weatherWord(r.code)}</div>
         <div class="t">${fmt(r.temp)}°</div>
         <div class="rain" title="Yağmur ihtimali %${fmt(r.rainProb)}"><span style="height:${Math.max(0, Math.min(100, r.rainProb ?? 0))}%"></span></div>
         <div class="rp">${(r.rainProb ?? 0) >= 20 ? `%${fmt(r.rainProb)}` : '&nbsp;'}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}mm/sa` : ''}</div>
@@ -843,7 +843,7 @@ function renderDetail() {
     <div class="card"><h3>🌤️ Saat saat hava</h3>
       <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === selH && !sel.slot ? 'now' : ''}" data-t="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
-        <div class="ico">${weatherIcon(r.code, r.isDay)}</div>
+        <div class="ico">${weatherIcon(r.code, r.isDay)}</div><div class="wword">${weatherWord(r.code)}</div>
         <div class="t">${fmt(r.temp)}°</div>
         <div class="rain" title="Yağmur ihtimali %${fmt(r.rainProb)}"><span style="height:${Math.max(0, Math.min(100, r.rainProb ?? 0))}%"></span></div>
         <div class="rp">${(r.rainProb ?? 0) >= 20 ? `%${fmt(r.rainProb)}` : '&nbsp;'}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}mm` : ''}</div>
@@ -853,7 +853,7 @@ function renderDetail() {
         <div class="sc ${scoreClass(modeVal(r))}">${combo ? '🎣💨' : '🎣'} ${fmt(modeVal(r), 1)}</div>
         ${r.danger ? '<div>⚠️</div>' : ''}
       </button>`).join('')}</div>
-      <p class="chart-note">Mavi sütun: yağmur ihtimali. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
+      <p class="chart-note">Simgenin altında hava yazılı (🌫️ = sis). Mavi sütun: yağmur ihtimali (boşsa yağmur yok). Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
     </div>
 
     <div class="card score-card">${windBadge(sel)}
