@@ -652,14 +652,16 @@ const MODE_HELP = {
 // Kart içinde küçük 6 saatlik hava şeridi
 function miniWx(a, from) {
   const cells = [];
-  for (let k = 0; k < 6; k++) {
+  // 24 saat: ilk bakışta 6 saat görünür, sola kaydırınca devamı
+  for (let k = 0; k < 24; k++) {
     const r = rowAt(a, new Date(from.getTime() + k * 3600e3));
     if (!r) break;
-    cells.push(`<span class="mc"><span class="mt">${hh(r.date)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}${(r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : ''}</span>` +
+    const newDay = k > 0 && r.date.getHours() === 0;
+    cells.push(`<span class="mc${newDay ? ' day' : ''}"><span class="mt">${newDay ? dayShort(r.date) : hh(r.date)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}${(r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : ''}</span>` +
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
       `<span class="mr">💧${fmt(r.rainProb ?? 0)}</span></span>`);
   }
-  return cells.length ? `<span class="mini-wx">${cells.join('')}</span>` : '';
+  return cells.length ? `<span class="mini-wx" title="Sola kaydırın: 24 saat">${cells.join('')}</span>` : '';
 }
 const topReasons = r => (rankMode === 'combo' ? [...r.reasons, ...(r.dirNotes || [])] : r.reasons)
   .filter(([v]) => v !== 0).sort((x, y) => Math.abs(y[0]) - Math.abs(x[0])).slice(0, 3)
@@ -1433,9 +1435,14 @@ function bindEvents() {
   // Sürekli güncel: uygulamaya dönünce ve 10 dakikada bir yenile
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.tab === 'map') renderRank(); });
   setInterval(() => { if (!document.hidden && state.tab === 'map') renderRank(); }, TTL);
+  // Kaydırma (ör. 24 saatlik şerit) dokunma sayılmasın
+  let downXY = null, swiped = false;
+  $('#rank-list').addEventListener('pointerdown', e => { downXY = [e.clientX, e.clientY]; swiped = false; });
+  $('#rank-list').addEventListener('pointermove', e => { if (downXY && Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 10) swiped = true; });
+  $('#rank-list').addEventListener('scroll', () => { swiped = true; }, true);
   $('#rank-list').addEventListener('click', e => {
     const it = e.target.closest('.rank-item');
-    if (!it || justLongPressed(it)) return;
+    if (!it || justLongPressed(it) || swiped) { swiped = false; return; }
     const a = state.analyses?.get(it.dataset.key);
     if (a) openDetail(a.place, rankWhen === 'trip');
   });

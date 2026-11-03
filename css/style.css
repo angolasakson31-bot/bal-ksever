@@ -491,3 +491,13 @@ body.map-mode main { padding: 0; max-width: none; }
 }
 .dtabs button.active { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); font-weight: 600; }
 .shore-line { font-size: .85rem; color: var(--text-2); margin: 10px 0 0; line-height: 1.5; }
+
+/* Mini şerit: 24 saat, 6'sı görünür, yatay kaydırma */
+.mini-wx {
+  overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; touch-action: pan-x pan-y;
+  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); mask-image: linear-gradient(to right, #000 88%, transparent);
+}
+.mini-wx::-webkit-scrollbar { display: none; }
+.mini-wx .mc { flex: 0 0 calc((100% - 15px) / 6); scroll-snap-align: start; position: relative; }
+.mini-wx .mc.day { box-shadow: inset 2px 0 0 var(--primary); }
+.mini-wx .mc.day .mt { color: var(--primary); }
