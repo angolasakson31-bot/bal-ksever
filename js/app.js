@@ -1407,55 +1407,6 @@ async function importBackup(file) {
   } catch (e) { toast('Yedek yüklenemedi: ' + e.message, 4000); }
 }
 
-// ————————————————— Yeni adrese taşınma —————————————————
-// Tarayıcılar kayıtları alan adına göre saklar; adres değişince veriler yeni adreste görünmez.
-// Eski adreste "Verilerimi taşı" → yeni adres açılır, veriler iki pencere arasında güvenli şekilde aktarılır
-// (postMessage; yalnız bu iki adres birbirine veri gönderebilir).
-const OLD_ORIGIN = 'https://angolasakson31-bot.github.io';
-const NEW_URL = ''; // Yeni adres belli olunca buraya yazılır, ör. 'https://rastgele.netlify.app/'
-const newUrl = () => ls('newUrlOverride') || NEW_URL;               // (test için değiştirilebilir)
-const oldOrigin = () => ls('oldOriginOverride') || OLD_ORIGIN;
-function setupMigration() {
-  const nu = newUrl();
-  // 1) Eski adresteyiz: yeni adresi duyur, taşıma düğmesi göster
-  if (nu && location.origin === oldOrigin() && new URL(nu).origin !== location.origin) {
-    const bar = document.createElement('div');
-    bar.className = 'move-bar';
-    bar.innerHTML = `<span>🆕 Rastgele'nin yeni adresi: <b>${esc(new URL(nu).host)}</b></span><button class="btn small primary" id="move-btn">📦 Verilerimi taşı ve aç</button>`;
-    document.querySelector('.topbar').after(bar);
-    updateTopH();
-    $('#move-btn').addEventListener('click', () => {
-      const target = new URL(nu); target.searchParams.set('tasi', '1');
-      const w = window.open(target.href, '_blank');
-      if (!w) { location.href = nu; return; }
-      const origin = new URL(nu).origin;
-      const onMsg = async e => {
-        if (e.origin !== origin || e.source !== w) return;
-        if (e.data?.type === 'rastgele-ready') w.postMessage({ type: 'rastgele-data', data: await backupPayload() }, origin);
-        if (e.data?.type === 'rastgele-done') { window.removeEventListener('message', onMsg); toast(`Taşındı ✅ ${e.data.spots} mera, ${e.data.catches} av. Artık yeni adresi kullanın.`, 6000); }
-      };
-      window.addEventListener('message', onMsg);
-    });
-  }
-  // 2) Yeni adresteyiz ve eski adresten açıldık: veriyi iste, al, kaydet
-  const params = new URLSearchParams(location.search);
-  if (params.get('tasi') === '1' && window.opener) {
-    const from = oldOrigin();
-    const onMsg = async e => {
-      if (e.origin !== from || e.data?.type !== 'rastgele-data') return;
-      window.removeEventListener('message', onMsg);
-      try {
-        await importPayload(e.data.data);
-        e.source.postMessage({ type: 'rastgele-done', spots: e.data.data.spots.length, catches: e.data.data.catches.length }, from);
-        toast(`📦 ${e.data.data.spots.length} mera ve ${e.data.data.catches.length} av taşındı. Bu adresi ana ekrana ekleyin!`, 7000);
-      } catch (err) { toast('Taşıma başarısız: ' + err.message, 6000); }
-      history.replaceState(null, '', location.pathname);
-    };
-    window.addEventListener('message', onMsg);
-    window.opener.postMessage({ type: 'rastgele-ready' }, from);
-  }
-}
-
 // ————————————————— Kurulum ipucu (ana ekrana ekle) —————————————————
 // Ana ekrana ekleme: tarayıcı destekliyorsa tek dokunuşla yükler, yoksa adım adım anlatır
 let deferredInstall = null;
@@ -1715,7 +1666,6 @@ function bindEvents() {
 async function init() {
   bindEvents();
   bindSugg();
-  setupMigration();
   setupSheet();
   setupInstallHint();
   await loadData();
