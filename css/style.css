@@ -650,3 +650,26 @@ body.map-mode main { padding: 0; max-width: none; }
 .dots i { width: 6px; height: 6px; }
 .dots i.on { width: 14px; }
 .carousel { align-items: flex-end; }
+
+/* Tek saat düğmesi */
+.map-bar .when-btn { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 8px; border-radius: 14px; text-align: left; flex: 0 1 auto; }
+.when-btn .wb-ic { font-size: 1.3rem; line-height: 1; }
+.when-btn .wb-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.when-btn .wb-txt small { font-size: .68rem; font-weight: 500; color: var(--text-2); }
+.when-btn .wb-txt b { font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.when-btn .wb-chg { flex: none; font-size: .75rem; font-weight: 700; color: var(--primary-ink); background: var(--primary); border-radius: 99px; padding: 4px 9px; }
+.map-bar .pill-btn.icon { align-self: center; }
+
+/* Kartlar: bir kademe daha küçük */
+.carousel .rank-item { flex-basis: min(262px, calc(100vw - 96px)); padding: 6px 8px; gap: 1px; border-radius: 12px; }
+.carousel .rank-item .wind-badge { top: 4px; right: 6px; font-size: .62rem; padding: 1px 5px; }
+.carousel .rank-top .rank-no { font-size: .78rem; }
+.carousel .rank-top .score-pill { font-size: .8rem; min-width: 34px; padding: 1px 5px; }
+.carousel .rank-lbl { font-size: .66rem; }
+.carousel .rank-name { font-size: .82rem; }
+.carousel .rank-name .tag { font-size: .62rem; padding: 0 5px; }
+.carousel .rank-time, .carousel .rank-meta, .carousel .catch-line { font-size: .68rem; }
+.carousel .mini-wx { margin: 2px 0 1px; }
+.carousel .mini-wx .mc { padding: 1px 0; font-size: .55rem; line-height: 1.1; }
+.carousel .mini-wx .mi { font-size: .74rem; }
+.carousel .mini-wx .mtp { font-size: .6rem; }
