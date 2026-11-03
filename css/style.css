@@ -417,3 +417,4 @@ dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radiu
 .mini-wx .mtp { font-weight: 700; font-size: .75rem; }
 .mini-wx .mw { color: var(--text-2); white-space: nowrap; }
 .mini-wx .mr { color: var(--text-2); }
+.score-ring .ring-kind { font-size: .75rem; margin-top: 1px; }
