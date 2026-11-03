@@ -404,7 +404,7 @@ dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radiu
 }
 .wind-badge b { color: var(--text); }
 .wdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
-.rank-name { padding-right: 78px; }
+.rank-name { padding-right: 118px; }
 .score-card .score-text { padding-top: 14px; }
 .wind-line { font-size: .8rem; color: var(--text-2); margin: 8px 0 0; }
 .pt-pop .wind-badge { position: static; }

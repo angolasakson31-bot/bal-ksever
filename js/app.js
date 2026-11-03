@@ -640,7 +640,7 @@ function summaryLine(r, type) {
 
 // Köşedeki küçük rüzgar puanı rozeti
 const windBadge = r => r.windScore == null ? '' : `<span class="wind-badge" title="Rüzgar puanı: ${esc((r.windNotes || []).join(' · '))}">` +
-  `${arrow(r.windDir)} 💨 <i class="wdot" style="background:${scoreColor(r.windScore)}"></i><b>${fmt(r.windScore, 1)}</b></span>`;
+  `${arrow(r.windDir)} 💨 rüzgar <i class="wdot" style="background:${scoreColor(r.windScore)}"></i><b>${fmt(r.windScore, 1)}</b></span>`;
 // Sıralama türü: balık puanı (ilk puanlama) veya birleşik (balık + rüzgar yönü/bölge etkisi)
 let rankMode = ['combo', 'wind'].includes(ls('rankMode')) ? 'combo' : 'fish';
 const modeVal = r => (rankMode === 'combo' ? (r.comboScore ?? r.score) : r.score) ?? 0;

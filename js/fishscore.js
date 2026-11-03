@@ -209,7 +209,8 @@ export function windScore(r, i, hours, type, lat, lng, shore = null) {
   let dir = 0;            // yalnız yön/bölge etkisi (birleşik puan için; hız iki kez sayılmasın)
   const dirNotes = [];
   const w = r.wind;
-  if (w < 5) { s = 5.5; notes.push('Durgun'); }
+  const calm = type === 'sea' ? 5 : 4; // balık puanıyla aynı eşik
+  if (w < calm) { s = 5.5; notes.push('Durgun, su ayna gibi'); }
   else if (w < 20) { s = 7.5; notes.push('Hafif-orta, ideal'); }
   else if (w < 30) { s = 5; notes.push('Orta-sert'); }
   else if (w < 40) { s = type === 'sea' ? 3 : 2.5; notes.push('Sert, atış zor'); }
