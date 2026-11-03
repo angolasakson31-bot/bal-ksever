@@ -20,6 +20,7 @@
   <header class="topbar">
     <h1 id="page-title">Avlarım</h1>
     <span class="brand">🎣 Rastgele</span>
+    <button id="top-install" class="top-install" hidden>📲 Ana ekrana ekle</button>
   </header>
 
   <div id="install-hint" class="install-hint" hidden>
@@ -245,6 +246,14 @@
       <button class="btn danger" data-menu="delete">🗑️ Merayı sil</button>
       <button class="btn" data-menu="close">Vazgeç</button>
     </div>
+  </dialog>
+
+  <!-- Ana ekrana ekleme talimatı -->
+  <dialog id="install-dialog">
+    <h2>📲 Ana ekrana ekle</h2>
+    <p class="muted">Tarayıcınız tek dokunuşla eklemeyi desteklemiyor. Şu adımları izleyin:</p>
+    <ol id="install-steps" class="install-steps"></ol>
+    <div class="dialog-actions"><span class="spacer"></span><button id="install-dialog-close" class="btn primary">Tamam</button></div>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>

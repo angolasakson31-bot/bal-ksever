@@ -4,6 +4,7 @@ import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, 
 import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
+import { renderKnots, renderRigs } from './guide.js';
 
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1321,11 +1322,13 @@ function renderStats() {
 }
 
 // ————————————————— Rehber & Ayarlar —————————————————
+let moreTab = 'fish', rigKind = 'sea';
 function renderMore() {
   let checked = [];
   try { checked = JSON.parse(localStorage.getItem('checklist') || '[]'); } catch { /* yok */ }
-  $('#more-content').innerHTML = `
-    <div class="card"><h3>🐟 Marmara balık rehberi</h3>
+  const TABS = [['fish', '🐟 Balıklar'], ['knots', '🪢 Düğümler'], ['rigs', '🎣 Takımlar'], ['list', '🎒 Liste'], ['settings', '⚙️ Ayarlar']];
+  const body = {
+    fish: () => `    <div class="card"><h3>🐟 Marmara balık rehberi</h3>
       ${SPECIES.filter(s => s.name !== 'Diğer').map(s => `<details class="species-card card">
         <summary>${s.emoji} ${esc(s.name)} ${s.minSize ? `<span class="min-size">min ${s.minSize} cm</span>` : ''}</summary>
         <dl><dt>Sezon</dt><dd>${esc(s.season)}</dd><dt>Nerede</dt><dd>${esc(s.where)}</dd>
@@ -1335,12 +1338,17 @@ function renderMore() {
       Amatör balıkçılıkta kişi başı günlük toplam av sınırı vardır. Güncel kurallar için Tarım ve Orman Bakanlığı'nın amatör avcılık tebliğini kontrol edin.</p>
     </div>
 
-    <div class="card checklist"><h3>🎒 Çıkmadan önce kontrol listesi</h3>
+`,
+    knots: () => `<p class="muted guide-intro">Her düğüme dokunun: adım adım çizimli anlatım. Mavi çizgi ana misina, turuncu çizgi misinanın ucu.</p>${renderKnots()}`,
+    rigs: () => `<div class="seg-mini rig-kind">${[['sea', '🌊 Deniz'], ['lake', '🏞️ Göl / dere']].map(([k, l]) => `<button data-rig="${k}" class="${rigKind === k ? 'active' : ''}">${l}</button>`).join('')}</div>
+      <p class="muted guide-intro">Takıma dokunun: şema, ölçüler ve kullanım. Ölçüler başlangıç içindir; balığın büyüklüğüne, akıntıya ve kamışınızın atar değerine göre ayarlayın.</p>${renderRigs(rigKind)}`,
+    list: () => `    <div class="card checklist"><h3>🎒 Çıkmadan önce kontrol listesi</h3>
       ${CHECKLIST.map((item, i) => `<label class="check"><input type="checkbox" data-check="${i}" ${checked.includes(i) ? 'checked' : ''}> ${esc(item)}</label>`).join('')}
       <button class="btn small" id="check-reset" style="margin-top:10px">Listeyi sıfırla</button>
     </div>
 
-    <div class="card"><h3>💾 Yedekleme</h3>
+`,
+    settings: () => `${installCard()}    <div class="card"><h3>💾 Yedekleme</h3>
       <p class="muted">Verileriniz sadece bu telefonda saklanıyor. Telefonu değiştirmeden önce veya ara ara yedek alın.</p>
       <div class="row" style="flex-wrap:wrap">
         <button class="btn" id="export-btn">⬇️ Yedek indir</button>
@@ -1351,7 +1359,9 @@ function renderMore() {
 
     <div class="card"><h3>ℹ️ Hakkında</h3>
       <p class="muted">Rastgele v1 · Kıyı balıkçıları için av günlüğü. Harita: © OpenStreetMap katkıcıları. Hava: Open-Meteo.</p>
-    </div>`;
+    </div>`,
+  };
+  $('#more-content').innerHTML = `<div class="dtabs more-tabs">${TABS.map(([k, l]) => `<button data-more="${k}" class="${k === moreTab ? 'active' : ''}">${l}</button>`).join('')}</div>${body[moreTab]()}`;
 }
 
 const blobToDataUrl = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
@@ -1386,21 +1396,50 @@ async function importBackup(file) {
 }
 
 // ————————————————— Kurulum ipucu (ana ekrana ekle) —————————————————
+// Ana ekrana ekleme: tarayıcı destekliyorsa tek dokunuşla yükler, yoksa adım adım anlatır
+let deferredInstall = null;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function installSteps() {
+  const ua = navigator.userAgent;
+  if (isIOS()) return ['Bu sayfayı <b>Safari</b> ile açın (başka tarayıcıda seçenek olmayabilir).', 'Alttaki <b>Paylaş</b> düğmesine dokunun (⬆️ kare içinde ok).', 'Listeyi kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>ye dokunun.'];
+  if (/SamsungBrowser/i.test(ua)) return ['Alttaki menü düğmesine (☰) dokunun.', '<b>“Sayfayı ekle” → “Ana ekran”</b>ı seçin.', '<b>Ekle</b>ye dokunun.'];
+  return ['Tarayıcının sağ üstündeki <b>⋮</b> (üç nokta) menüsüne dokunun.', '<b>“Uygulamayı yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Yükle / Ekle</b>ye dokunun.', 'Bu seçenek yoksa sayfayı <b>Google Chrome</b> ile açıp tekrar deneyin (bazı VPN’li ya da özel tarayıcılar desteklemez).'];
+}
+async function installApp() {
+  if (isStandalone()) { toast('Rastgele zaten ana ekranınızda ✅'); return; }
+  if (deferredInstall) {
+    deferredInstall.prompt();
+    const r = await deferredInstall.userChoice.catch(() => null);
+    deferredInstall = null;
+    if (r?.outcome === 'accepted') { toast('Ana ekrana eklendi 🎣'); updateInstallUI(); }
+    return;
+  }
+  $('#install-steps').innerHTML = installSteps().map(t => `<li>${t}</li>`).join('');
+  $('#install-dialog').showModal();
+}
+function installCard() {
+  if (isStandalone()) return `<div class="card"><h3>📲 Ana ekran</h3><p class="muted">Rastgele ana ekranınızda, uygulama olarak açık ✅</p></div>`;
+  return `<div class="card install-card"><h3>📲 Ana ekrana ekle</h3>
+    <p class="muted">Rastgele'yi telefonunuza uygulama gibi ekleyin: simgesine dokunup tek dokunuşla açılır, tam ekran çalışır, internet yokken de açılır ve kayıtlarınız silinmez.</p>
+    <button class="btn primary" id="install-btn2">📲 Ana ekrana ekle</button></div>`;
+}
+function updateInstallUI() {
+  const top = $('#top-install');
+  if (top) top.hidden = isStandalone();
+}
 function setupInstallHint() {
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; updateInstallUI(); });
+  window.addEventListener('appinstalled', () => { deferredInstall = null; updateInstallUI(); toast('Ana ekrana eklendi 🎣'); });
+  $('#top-install').addEventListener('click', installApp);
+  $('#install-dialog-close').addEventListener('click', () => $('#install-dialog').close());
+  updateInstallUI();
+  const standalone = isStandalone();
   if (standalone || ls('hideInstall')) return;
   const hint = $('#install-hint');
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if (isIOS) {
-    $('#install-text').textContent = 'Uygulama gibi kullanmak için: Paylaş ⬆️ → “Ana Ekrana Ekle”';
-    hint.hidden = false;
-  }
-  window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault();
-    $('#install-text').textContent = 'Rastgele’yi telefonunuza uygulama olarak yükleyin.';
-    $('#install-btn').hidden = false; hint.hidden = false;
-    $('#install-btn').onclick = async () => { e.prompt(); await e.userChoice; hint.hidden = true; };
-  });
+  $('#install-text').textContent = 'Rastgele’yi ana ekrana ekleyin: uygulama gibi açılır.';
+  $('#install-btn').hidden = false; hint.hidden = false;
+  $('#install-btn').onclick = installApp;
   $('#install-close').onclick = () => { hint.hidden = true; updateTopH(); try { localStorage.setItem('hideInstall', '1'); } catch { /* yok */ } };
 }
 
@@ -1555,6 +1594,11 @@ function bindEvents() {
     if (e.target.id === 'import-file' && e.target.files[0]) importBackup(e.target.files[0]);
   });
   $('#more-content').addEventListener('click', e => {
+    const mt = e.target.closest('[data-more]');
+    if (mt) { moreTab = mt.dataset.more; renderMore(); window.scrollTo(0, 0); return; }
+    const rk = e.target.closest('[data-rig]');
+    if (rk) { rigKind = rk.dataset.rig; renderMore(); return; }
+    if (e.target.closest('#install-btn2')) { installApp(); return; }
     if (e.target.id === 'export-btn') exportBackup();
     if (e.target.id === 'check-reset') { try { localStorage.removeItem('checklist'); } catch { /* yok */ } renderMore(); }
   });

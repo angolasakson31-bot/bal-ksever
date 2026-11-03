@@ -21,7 +21,8 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
 - **Haritada boş bir noktaya dokun:** o noktanın skoru ve özeti; tek dokunuşla ayrıntılı tahmin veya mera kaydı.
 - **Deniz ve tatlı su:** su tipi otomatik algılanır (deniz verisi varsa deniz, yoksa göl). Elle göl/baraj veya nehir/dere seçilebilir. Her su tipi için ayrı puanlama yapılır.
 - **İstatistik:** tür, saat, ay, yem ve meraya göre dağılım; rekorlar.
-- **Rehber:** Marmara türleri (sezon, yem, yöntem, asgari boy), çıkış kontrol listesi.
+- **Rehber (alt bölümler):** 🐟 Marmara balıkları · 🪢 6 düğüm (Palomar, Geliştirilmiş kilit, Uni, Kürek iğne/Snell, Çift Uni, Kol düğümü), her biri 4 çizimli adım · 🎣 takımlar: deniz 7 (çapari, LRF, spin, kollu dip, şamandıralı, surf, kalamar), göl/dere 6 (sazan method feeder, hafif şamandıra, turna, sudak jig, yayın, alabalık) şema + ölçüler + kullanım · 🎒 kontrol listesi · ⚙️ ayarlar.
+- **📲 Ana ekrana ekle:** üst çubukta ve Ayarlar'da; tarayıcı destekliyorsa tek dokunuş, değilse platforma göre adım adım anlatım.
 - **Yedekleme:** tüm verileri tek dosyaya indirip geri yükleme.
 - Çevrimdışı çalışır. Veriler sadece telefonda saklanır.
 

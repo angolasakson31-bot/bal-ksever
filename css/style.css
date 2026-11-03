@@ -510,3 +510,52 @@ body.map-mode main { padding: 0; max-width: none; }
   border-radius: 99px; padding: 6px 12px; font: inherit; font-size: .85rem; white-space: nowrap; cursor: pointer;
 }
 .sugg:empty { display: none; }
+
+/* ——— Ana ekrana ekle ——— */
+.top-install {
+  border: 0; background: var(--primary); color: var(--primary-ink); border-radius: 99px; padding: 6px 12px;
+  font: inherit; font-size: .8rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.topbar:has(.top-install:not([hidden])) .brand { display: none; }
+.install-steps { padding-left: 22px; line-height: 1.6; }
+.install-steps li { margin-bottom: 6px; }
+.install-card .btn { width: 100%; margin-top: 4px; }
+
+/* ——— Rehber: düğüm ve takım çizimleri ——— */
+.more-tabs { margin-top: 0; }
+.guide-intro { margin: 0 0 10px; }
+.rig-kind { margin-bottom: 8px; }
+.guide-card summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.guide-card summary::-webkit-details-marker { display: none; }
+.guide-card[open] summary { margin-bottom: 8px; }
+.guide-use { font-size: .88rem; color: var(--text-2); margin: 0 0 8px; }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.steps li { background: var(--surface-2); border-radius: 12px; padding: 8px; }
+.step-fig { background: var(--surface); border-radius: 8px; }
+.step-txt { font-size: .92rem; margin-top: 6px; line-height: 1.45; }
+.gsvg { width: 100%; height: auto; display: block; }
+.gsvg .g-line { stroke: var(--s1); stroke-width: 3; fill: none; stroke-linecap: round; }
+.gsvg .g-tag { stroke: var(--s2); stroke-width: 3; fill: none; stroke-linecap: round; }
+.gsvg .g-wire { stroke: #8a8f98; stroke-width: 3.5; stroke-dasharray: 2 2; }
+.gsvg .g-hook { stroke: var(--text); stroke-width: 3.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.gsvg .g-arrow { stroke: var(--text-2); stroke-width: 1.8; stroke-dasharray: 4 3; }
+.gsvg .g-ahead { fill: var(--text-2); }
+.gsvg .g-txt { fill: var(--text-2); font-size: 11px; font-family: inherit; }
+.gsvg .g-txt2 { fill: var(--muted); font-size: 10px; font-family: inherit; }
+.gsvg .g-knot { fill: var(--s1); stroke: var(--s2); stroke-width: 2; }
+.gsvg .g-emoji { font-size: 16px; }
+.gsvg .g-lead { stroke: var(--border); stroke-width: 1; }
+.gsvg .g-water { stroke: var(--s1); stroke-width: 1.5; stroke-dasharray: 6 4; opacity: .7; }
+.gsvg .g-metal { stroke: var(--text-2); stroke-width: 2.2; }
+.gsvg .g-stop { fill: var(--text); }
+.gsvg .g-bead { fill: #d64545; }
+.gsvg .g-float { fill: #f2b33d; stroke: var(--text); stroke-width: 1.2; }
+.gsvg .g-floattop { stroke: #d64545; stroke-width: 5; }
+.gsvg .g-leadw { fill: #7d8590; stroke: var(--text-2); stroke-width: 1; }
+.gsvg .g-feeder { fill: #c9a26b; stroke: var(--text-2); stroke-width: 1.2; }
+.gsvg .g-lure { fill: #9ec5f4; stroke: var(--text-2); stroke-width: 1.2; }
+.gsvg .g-soft { stroke: #e87ba4; stroke-width: 6; stroke-linecap: round; }
+.gsvg .g-bait { fill: #eda100; stroke: var(--text-2); stroke-width: 1; }
+.rig-wrap { background: var(--surface-2); border-radius: 12px; padding: 6px; margin-bottom: 8px; }
+.rig-wrap .gsvg { max-width: 420px; margin: 0 auto; }
+.specs, .howto { margin: 4px 0 8px; padding-left: 20px; font-size: .9rem; line-height: 1.5; }
