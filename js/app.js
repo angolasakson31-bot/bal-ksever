@@ -668,7 +668,7 @@ function miniWx(a, from, hours = 24) {
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
       `<span class="mr">💧${fmt(r.rainProb ?? 0)}</span></span>`);
   }
-  return cells.length ? `<span class="mini-wx${hours <= 6 ? ' fixed' : ''}"${hours > 6 ? ' title="Sola kaydırın: 24 saat"' : ''}>${cells.join('')}</span>` : '';
+  return cells.length ? `<span class="mini-wx${hours <= 6 ? ' fixed' : ''}"${hours > 6 ? ' title="Sola kaydırın: 24 saat"' : ''}>${cells.join('')}</span>${hours > 6 ? '<span class="wx-hint">⟵ 24 saat için hava şeridini kaydır</span>' : ''}` : '';
 }
 const topReasons = r => (rankMode === 'combo' ? [...r.reasons, ...(r.dirNotes || [])] : r.reasons)
   .filter(([v]) => v !== 0).sort((x, y) => Math.abs(y[0]) - Math.abs(x[0])).slice(0, 3)
@@ -778,7 +778,7 @@ async function renderRank(force = false) {
         </span>
         <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
         <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
-        ${miniWx(a, r.date, 6)}
+        ${miniWx(a, r.date)}
         <span class="rank-meta">🐟 ${esc(sp)}</span>
         ${catchLine(a.place)}
       </button>`;
@@ -1612,7 +1612,15 @@ function bindEvents() {
   let downXY = null, swiped = false, scrollT = null;
   $('#rank-list').addEventListener('pointerdown', e => { downXY = [e.clientX, e.clientY]; swiped = false; });
   $('#rank-list').addEventListener('pointermove', e => { if (downXY && Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 10) swiped = true; });
-  $('#rank-list').addEventListener('scroll', () => { swiped = true; }, true);
+  $('#rank-list').addEventListener('scroll', e => {
+    swiped = true;
+    // Hava şeridi bir kez kaydırıldıysa ipucunu artık gösterme
+    if (e.target.classList?.contains('mini-wx') && !document.body.classList.contains('wxhint-off')) {
+      document.body.classList.add('wxhint-off');
+      try { localStorage.setItem('wxHint', '0'); } catch { /* yok */ }
+    }
+  }, true);
+  if (ls('wxHint') === '0') document.body.classList.add('wxhint-off');
   $('#rank-list').addEventListener('click', e => {
     const it = e.target.closest('.rank-item');
     if (!it || justLongPressed(it) || swiped) { swiped = false; return; }
