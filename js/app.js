@@ -781,8 +781,10 @@ function renderDetail() {
   const fineFrom = detail.trip ? detail.trip.start : new Date();
   const fineMin = detail.trip ? (detail.trip.end - detail.trip.start) / 60000 : 6 * 60;
   const fine = slots(a, fineFrom, fineMin, detail.step);
-  const fineAvg = fine.length ? fine.reduce((x, r) => x + r.score, 0) / fine.length : null;
-  const fineBest = fine.length ? fine.reduce((b, r) => (r.score > b.score ? r : b)) : null;
+  const fineAvg = fine.length ? fine.reduce((x, r) => x + modeVal(r), 0) / fine.length : null;
+  const fineBest = fine.length ? fine.reduce((b, r) => (modeVal(r) > modeVal(b) ? r : b)) : null;
+  const combo = rankMode === 'combo';
+  const ringV = modeVal(sel);
   const spotId = place.key && place.key !== 'me' ? place.key : place.id;
   const isSpot = !!spotById(spotId);
   const p3 = hourAt(rows, new Date(sel.date.getTime() - 3 * 3600e3))?.pressure;
@@ -792,7 +794,7 @@ function renderDetail() {
   const ahead = dayRows.filter(r => r.date.getTime() >= Date.now() - 3600e3);
   const pool = ahead.length ? ahead : dayRows;
   const advice = adviceText({ dayRows: pool, sel, type, place });
-  const best = [...pool].sort((x, y) => y.score - x.score).slice(0, 3).sort((x, y) => x.date - y.date);
+  const best = [...pool].sort((x, y) => modeVal(y) - modeVal(x)).slice(0, 3).sort((x, y) => x.date - y.date);
   const C1 = 'var(--s1)', C2 = 'var(--s2)';
   const tm = d => (d ? fmtTime(d) : '—');
 
@@ -832,7 +834,7 @@ function renderDetail() {
         <div class="w">${arrow(r.windDir)} ${fmt(r.wind)}</div>
         <div class="g">hamle ${fmt(r.gust)}</div>
         ${type === 'sea' && r.wave != null ? `<div class="g">🌊 ${fmt(r.wave, 1)}m</div>` : ''}
-        <div class="sc ${scoreClass(r.score)}">🎣 ${fmt(r.score, 1)}</div>
+        <div class="sc ${scoreClass(modeVal(r))}">${combo ? '🎣💨' : '🎣'} ${fmt(modeVal(r), 1)}</div>
         ${r.danger ? '<div>⚠️</div>' : ''}
       </button>`).join('')}</div>
       <p class="chart-note">${fine.some(r => r.fine) ? '15 dakikalık model verisi kullanılıyor.' : 'Saatlik verilerin arası hesaplanarak gösteriliyor.'} Bir ana dokunarak seçin.</p>
@@ -848,19 +850,21 @@ function renderDetail() {
         <div class="w">${arrow(r.windDir)} ${fmt(r.wind)}</div>
         <div class="g">hamle ${fmt(r.gust)}</div>
         ${type === 'sea' && r.wave != null ? `<div class="g">🌊 ${fmt(r.wave, 1)}m</div>` : ''}
-        <div class="sc ${scoreClass(r.score)}">🎣 ${fmt(r.score, 1)}</div>
+        <div class="sc ${scoreClass(modeVal(r))}">${combo ? '🎣💨' : '🎣'} ${fmt(modeVal(r), 1)}</div>
         ${r.danger ? '<div>⚠️</div>' : ''}
       </button>`).join('')}</div>
       <p class="chart-note">Mavi sütun: yağmur ihtimali. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
     </div>
 
     <div class="card score-card">${windBadge(sel)}
-      <div class="score-ring" style="border-color:${scoreColor(sel.score)}">${fmt(sel.score, 1)}<small>/ 10</small></div>
-      <div class="score-text"><strong>${scoreLabel(sel.score, sel.danger)}</strong>
+      <div class="score-ring" style="border-color:${scoreColor(ringV)}">${fmt(ringV, 1)}<small>/ 10</small><small class="ring-kind">${combo ? '🎣💨' : '🎣'}</small></div>
+      <div class="score-text"><strong>${scoreLabel(ringV, sel.danger)}</strong>
         <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${hh(sel.date)}${isNow ? ' · şu an' : ''}</div>
         <ul>${sel.reasons.map(([v, t]) => `<li>${v > 0 ? '＋' : '－'} ${esc(t)}</li>`).join('')}</ul>
         ${sel.windScore != null ? `<p class="wind-line">💨 Rüzgar puanı <b>${fmt(sel.windScore, 1)}</b>: ${esc(windName(sel.windDir, true))} ${fmt(sel.wind)} km/s · ${esc(sel.windNotes.join(' · '))}</p>
-        ${sel.comboScore != null ? `<p class="wind-line">🎣💨 Balık + rüzgar puanı <b>${fmt(sel.comboScore, 1)}</b>${(sel.dirNotes || []).length ? ': ' + esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : ' (yön etkisi yok)'}</p>` : ''}` : ''}
+        ${combo ? `<p class="wind-line">🎣💨 Halkadaki puan: <b>balık + rüzgar</b>. Rüzgar yönü etkisi: ${(sel.dirNotes || []).length ? esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : 'yok'}</p>
+          <p class="wind-line">🎣 Sadece balık puanı: <b>${fmt(sel.score, 1)}</b></p>` : ''}
+        ${!combo && sel.comboScore != null ? `<p class="wind-line">🎣💨 Balık + rüzgar puanı <b>${fmt(sel.comboScore, 1)}</b>${(sel.dirNotes || []).length ? ': ' + esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : ' (yön etkisi yok)'}</p>` : ''}` : ''}
       </div>
     </div>
 
@@ -876,7 +880,7 @@ function renderDetail() {
     </div>
 
     <div class="card"><h3>📈 Grafikler (${dayRows[0]?.date.toLocaleDateString('tr-TR', { weekday: 'long' }) || ''})</h3>
-      <h4>Balık skoru</h4>${lineChart('score', dayRows, [{ key: 'score', label: 'Skor', color: C1 }], { decimals: 1, sel: selH })}
+      <h4>${combo ? 'Balık + rüzgar puanı' : 'Balık puanı'}</h4>${lineChart('score', dayRows, [{ key: combo ? 'comboScore' : 'score', label: 'Puan', color: C1 }], { decimals: 1, sel: selH })}
       <h4>Rüzgar (km/s)</h4>${lineChart('wind', dayRows, [{ key: 'wind', label: 'Rüzgar', color: C1 }, { key: 'gust', label: 'Hamle', color: C2 }], { unit: ' km/s', sel: selH })}
       ${type === 'sea' && dayRows.some(r => r.wave != null)
         ? `<h4>Dalga (m)</h4>${lineChart('wave', dayRows, [{ key: 'wave', label: 'Dalga', color: C1 }, ...(dayRows.some(r => r.swell != null) ? [{ key: 'swell', label: 'Soluğan', color: C2 }] : [])], { unit: ' m', decimals: 1, sel: selH })}`
@@ -903,7 +907,7 @@ function renderDetail() {
     </div></div>
 
     <div class="card"><h3>Günün en iyi saatleri</h3><ul class="best-list">
-      ${best.map(r => `<li><span>${hh(r.date)} ${r.danger ? '⚠️' : ''}</span><b class="${scoreClass(r.score)}">${fmt(r.score, 1)}</b></li>`).join('')}
+      ${best.map(r => `<li><span>${hh(r.date)} ${r.danger ? '⚠️' : ''}</span><b class="${scoreClass(modeVal(r))}">${fmt(modeVal(r), 1)}</b></li>`).join('')}
     </ul></div>
 
     <div class="popup-actions big">
