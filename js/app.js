@@ -1574,7 +1574,6 @@ function bindEvents() {
   $('#spot-form').addEventListener('submit', saveSpot);
   $('#spot-cancel').addEventListener('click', () => $('#spot-dialog').close());
   $('#spot-delete').addEventListener('click', deleteSpot);
-  $('#map-locate').addEventListener('click', locateMe);
   $('#map-here').addEventListener('click', () => toggleHereCard());
   $('#here-card').addEventListener('click', e => {
     if (e.target.closest('.here-close')) { toggleHereCard(); return; }
