@@ -1366,9 +1366,26 @@ function renderMore() {
 
 const blobToDataUrl = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
 
-async function exportBackup() {
+async function backupPayload() {
   const catches = await Promise.all(state.catches.map(async c => ({ ...c, photo: c.photo ? await blobToDataUrl(c.photo) : null })));
-  const blob = new Blob([JSON.stringify({ app: 'rastgele', version: 1, exportedAt: new Date().toISOString(), catches, spots: state.spots })], { type: 'application/json' });
+  const keep = {};
+  for (const k of ['checklist', 'trip', 'rankMode', 'recentSearches', 'mapBase']) { const v = ls(k); if (v != null) keep[k] = v; }
+  return { app: 'rastgele', version: 1, exportedAt: new Date().toISOString(), catches, spots: state.spots, settings: keep };
+}
+async function importPayload(data) {
+  if (data?.app !== 'rastgele') throw new Error('Bu bir Rastgele yedeği değil');
+  for (const s2 of data.spots || []) await db.put('spots', s2);
+  for (const c of data.catches || []) {
+    const photo = c.photo ? await (await fetch(c.photo)).blob() : null;
+    dropPhotoUrl(c.id);
+    await db.put('catches', { ...c, photo });
+  }
+  for (const [k, v] of Object.entries(data.settings || {})) { try { if (ls(k) == null) localStorage.setItem(k, v); } catch { /* yok */ } }
+  await loadData(); refreshAll();
+}
+
+async function exportBackup() {
+  const blob = new Blob([JSON.stringify(await backupPayload())], { type: 'application/json' });
   const name = `rastgele-yedek-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([blob], name, { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1384,15 +1401,59 @@ async function importBackup(file) {
     const data = JSON.parse(await file.text());
     if (data.app !== 'rastgele') throw new Error('Bu bir Rastgele yedeği değil');
     if (!confirm(`${data.catches.length} av ve ${data.spots.length} mera eklensin mi? (Aynı kayıtlar güncellenir)`)) return;
-    for (const s of data.spots) await db.put('spots', s);
-    for (const c of data.catches) {
-      const photo = c.photo ? await (await fetch(c.photo)).blob() : null;
-      dropPhotoUrl(c.id);
-      await db.put('catches', { ...c, photo });
-    }
-    await loadData(); refreshAll(); renderMore();
+    await importPayload(data);
+    renderMore();
     toast('Yedek yüklendi');
   } catch (e) { toast('Yedek yüklenemedi: ' + e.message, 4000); }
+}
+
+// ————————————————— Yeni adrese taşınma —————————————————
+// Tarayıcılar kayıtları alan adına göre saklar; adres değişince veriler yeni adreste görünmez.
+// Eski adreste "Verilerimi taşı" → yeni adres açılır, veriler iki pencere arasında güvenli şekilde aktarılır
+// (postMessage; yalnız bu iki adres birbirine veri gönderebilir).
+const OLD_ORIGIN = 'https://angolasakson31-bot.github.io';
+const NEW_URL = ''; // Yeni adres belli olunca buraya yazılır, ör. 'https://rastgele.netlify.app/'
+const newUrl = () => ls('newUrlOverride') || NEW_URL;               // (test için değiştirilebilir)
+const oldOrigin = () => ls('oldOriginOverride') || OLD_ORIGIN;
+function setupMigration() {
+  const nu = newUrl();
+  // 1) Eski adresteyiz: yeni adresi duyur, taşıma düğmesi göster
+  if (nu && location.origin === oldOrigin() && new URL(nu).origin !== location.origin) {
+    const bar = document.createElement('div');
+    bar.className = 'move-bar';
+    bar.innerHTML = `<span>🆕 Rastgele'nin yeni adresi: <b>${esc(new URL(nu).host)}</b></span><button class="btn small primary" id="move-btn">📦 Verilerimi taşı ve aç</button>`;
+    document.querySelector('.topbar').after(bar);
+    updateTopH();
+    $('#move-btn').addEventListener('click', () => {
+      const target = new URL(nu); target.searchParams.set('tasi', '1');
+      const w = window.open(target.href, '_blank');
+      if (!w) { location.href = nu; return; }
+      const origin = new URL(nu).origin;
+      const onMsg = async e => {
+        if (e.origin !== origin || e.source !== w) return;
+        if (e.data?.type === 'rastgele-ready') w.postMessage({ type: 'rastgele-data', data: await backupPayload() }, origin);
+        if (e.data?.type === 'rastgele-done') { window.removeEventListener('message', onMsg); toast(`Taşındı ✅ ${e.data.spots} mera, ${e.data.catches} av. Artık yeni adresi kullanın.`, 6000); }
+      };
+      window.addEventListener('message', onMsg);
+    });
+  }
+  // 2) Yeni adresteyiz ve eski adresten açıldık: veriyi iste, al, kaydet
+  const params = new URLSearchParams(location.search);
+  if (params.get('tasi') === '1' && window.opener) {
+    const from = oldOrigin();
+    const onMsg = async e => {
+      if (e.origin !== from || e.data?.type !== 'rastgele-data') return;
+      window.removeEventListener('message', onMsg);
+      try {
+        await importPayload(e.data.data);
+        e.source.postMessage({ type: 'rastgele-done', spots: e.data.data.spots.length, catches: e.data.data.catches.length }, from);
+        toast(`📦 ${e.data.data.spots.length} mera ve ${e.data.data.catches.length} av taşındı. Bu adresi ana ekrana ekleyin!`, 7000);
+      } catch (err) { toast('Taşıma başarısız: ' + err.message, 6000); }
+      history.replaceState(null, '', location.pathname);
+    };
+    window.addEventListener('message', onMsg);
+    window.opener.postMessage({ type: 'rastgele-ready' }, from);
+  }
 }
 
 // ————————————————— Kurulum ipucu (ana ekrana ekle) —————————————————
@@ -1654,6 +1715,7 @@ function bindEvents() {
 async function init() {
   bindEvents();
   bindSugg();
+  setupMigration();
   setupSheet();
   setupInstallHint();
   await loadData();
