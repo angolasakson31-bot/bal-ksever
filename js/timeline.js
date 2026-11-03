@@ -67,5 +67,8 @@ export function tripSummary(a, start, end) {
   if (!list.length) return null;
   const avg = list.reduce((s, r) => s + r.score, 0) / list.length;
   const best = list.reduce((b, r) => (r.score > b.score ? r : b));
-  return { list, avg: Math.round(avg * 10) / 10, best, danger: list.some(r => r.danger) };
+  const w = list.filter(r => r.windScore != null);
+  const avgWind = w.length ? Math.round(w.reduce((x, r) => x + r.windScore, 0) / w.length * 10) / 10 : null;
+  const bestWind = w.length ? w.reduce((b, r) => (r.windScore > b.windScore ? r : b)) : best;
+  return { list, avg: Math.round(avg * 10) / 10, best, avgWind, bestWind, danger: list.some(r => r.danger) };
 }
