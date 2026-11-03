@@ -488,9 +488,9 @@ function miniWx(a, from) {
   for (let k = 0; k < 6; k++) {
     const r = rowAt(a, new Date(from.getTime() + k * 3600e3));
     if (!r) break;
-    cells.push(`<span class="mc"><span class="mt">${hh(r.date)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}</span>` +
+    cells.push(`<span class="mc"><span class="mt">${hh(r.date)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}${(r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : ''}</span>` +
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
-      `<span class="mr">${(r.rainProb ?? 0) >= 20 ? `💧${fmt(r.rainProb)}` : '&nbsp;'}</span></span>`);
+      `<span class="mr">💧${fmt(r.rainProb ?? 0)}</span></span>`);
   }
   return cells.length ? `<span class="mini-wx">${cells.join('')}</span>` : '';
 }
@@ -502,6 +502,10 @@ function renderModeToggle() {
   $('#rank-mode-help').innerHTML = MODE_HELP[rankMode];
 }
 
+// Simge yağmur göstermiyor ama ihtimal yüksekse küçük damla ekle
+const isRainCode = c => c != null && (c >= 51 && c <= 67 || c >= 80);
+const wxIcon = r => weatherIcon(r.code, r.isDay) + ((r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : '');
+const rainText = (r, unit) => `💧%${fmt(r.rainProb ?? 0)}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}${unit}` : ''}`;
 const scorePill = r => `<span class="score-pill" style="background:${scoreColor(r.score)}">${fmt(r.score, 1)}</span>`;
 
 // —— Sıralama ——
@@ -827,10 +831,10 @@ function renderDetail() {
       </div>
       <div class="hours wx-strip">${fine.map(r => `<button class="hour wxh ${sel.slot && r.date.getTime() === sel.date.getTime() ? 'now' : ''}" data-slot="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
-        <div class="ico">${weatherIcon(r.code, r.isDay)}</div><div class="wword">${weatherWord(r.code)}</div>
+        <div class="ico">${wxIcon(r)}</div><div class="wword">${weatherWord(r.code)}</div>
         <div class="t">${fmt(r.temp)}°</div>
         <div class="rain" title="Yağmur ihtimali %${fmt(r.rainProb)}"><span style="height:${Math.max(0, Math.min(100, r.rainProb ?? 0))}%"></span></div>
-        <div class="rp">${(r.rainProb ?? 0) >= 20 ? `%${fmt(r.rainProb)}` : '&nbsp;'}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}mm/sa` : ''}</div>
+        <div class="rp">${rainText(r, 'mm/sa')}</div>
         <div class="w">${arrow(r.windDir)} ${fmt(r.wind)}</div>
         <div class="g">hamle ${fmt(r.gust)}</div>
         ${type === 'sea' && r.wave != null ? `<div class="g">🌊 ${fmt(r.wave, 1)}m</div>` : ''}
@@ -843,17 +847,17 @@ function renderDetail() {
     <div class="card"><h3>🌤️ Saat saat hava</h3>
       <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === selH && !sel.slot ? 'now' : ''}" data-t="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
-        <div class="ico">${weatherIcon(r.code, r.isDay)}</div><div class="wword">${weatherWord(r.code)}</div>
+        <div class="ico">${wxIcon(r)}</div><div class="wword">${weatherWord(r.code)}</div>
         <div class="t">${fmt(r.temp)}°</div>
         <div class="rain" title="Yağmur ihtimali %${fmt(r.rainProb)}"><span style="height:${Math.max(0, Math.min(100, r.rainProb ?? 0))}%"></span></div>
-        <div class="rp">${(r.rainProb ?? 0) >= 20 ? `%${fmt(r.rainProb)}` : '&nbsp;'}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}mm` : ''}</div>
+        <div class="rp">${rainText(r, 'mm')}</div>
         <div class="w">${arrow(r.windDir)} ${fmt(r.wind)}</div>
         <div class="g">hamle ${fmt(r.gust)}</div>
         ${type === 'sea' && r.wave != null ? `<div class="g">🌊 ${fmt(r.wave, 1)}m</div>` : ''}
         <div class="sc ${scoreClass(modeVal(r))}">${combo ? '🎣💨' : '🎣'} ${fmt(modeVal(r), 1)}</div>
         ${r.danger ? '<div>⚠️</div>' : ''}
       </button>`).join('')}</div>
-      <p class="chart-note">Simgenin altında hava yazılı (🌫️ = sis). Mavi sütun: yağmur ihtimali (boşsa yağmur yok). Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
+      <p class="chart-note">Simge: o saatin <b>en olası</b> havası (🌫️ = sis). Mavi sütun ve 💧%: yağmur <b>ihtimali</b>. %50 üstü büyük ihtimalle yağar, %20–50 yağabilir. mm: yağarsa miktarı. Simge yağmur göstermese de ihtimal yüksekse köşesine 💧 eklenir. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
     </div>
 
     <div class="card score-card">${windBadge(sel)}
