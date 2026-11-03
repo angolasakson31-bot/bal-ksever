@@ -32,7 +32,9 @@ Puan 0–10 arasıdır. Ağırlıklar kanıtın gücüne göre verildi:
 4. **Yağış:** şimşek ve kuvvetli yağış kötü. Derede son 24 saatte çok yağış varsa su kabarık ve bulanık olur.
 5. **Basınç ve ay (solunar):** bilimsel kanıtı zayıf olduğu için düşük ağırlıkla eklendi.
 
-**İki sıralama seçeneği:** Meralarım listesinin üstünde 🎣 *Balık puanı* (ilk puanlama) veya 💨 *Rüzgar puanı* seçilir; liste ve haritadaki sıra numaraları seçilen puana göre dizilir, köşedeki rozet diğer puanı gösterir. Seçim hatırlanır.
+**İki sıralama seçeneği:** 🎣 *Balık puanı* (ilk puanlama, aynen) veya 🎣💨 *Balık + rüzgar* (balık puanı + yalnızca rüzgar yönü/bölge etkisi; rüzgar hızı iki kez sayılmaz). Köşedeki 💨 rozet ayrıca rüzgar puanıdır. Her merada dokunmadan görülebilen 6 saatlik mini hava şeridi var.
+
+**Solunar:** bilimsel çalışmalar solunar tablolarla av oranı arasında ilişki bulamadığı için ağırlığı +0,2 / +0,1'e düşürüldü.
 
 **💨 Rüzgar puanı:** rüzgar hızı, hamle, denizde dalga; Boğaz/Marmara'da sert lodos ve uzun lodosta akıntı uyarısı; göl/derede soğuk mevsimde soğuk kuzey rüzgarı (−) ve ılık güney rüzgarı (+); 24 saat aynı yönden esen rüzgar (yem rüzgarın vurduğu kıyıda birikir).
 

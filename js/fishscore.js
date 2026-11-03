@@ -168,14 +168,16 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60) {
 
     // 7) Ay (zayıf kanıt, düşük ağırlık)
     const sol = solunar(new Date(r.date.getTime() + mid * 60000), lat, lng);
-    if (sol === 'major') add(0.6, 'Solunar büyük dönem (ay tepede/altta)');
-    else if (sol === 'minor') add(0.3, 'Solunar küçük dönem (ay doğuşu/batışı)');
+    if (sol === 'major') add(0.2, 'Solunar büyük dönem (ay tepede/altta)'); // bilimsel destek zayıf → küçük ağırlık
+    else if (sol === 'minor') add(0.1, 'Solunar küçük dönem (ay doğuşu/batışı)');
     const moon = moonPhase(r.date);
     if (Math.min(Math.abs(moon.age - 14.77), moon.age, 29.53 - moon.age) < 2) add(0.3, moon.name);
 
     const score = Math.round(Math.max(0, Math.min(10, s)) * 10) / 10;
     const w = windScore(r, i, hours, type, lat, lng);
-    return { ...r, score, windScore: w.score, windNotes: w.notes, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
+    // Birleşik puan: balık puanı + sadece rüzgar yönü/bölge etkisi
+    const comboScore = Math.round(Math.max(0, Math.min(10, s + w.dir)) * 10) / 10;
+    return { ...r, score, comboScore, dirNotes: w.dirNotes, windScore: w.score, windNotes: w.notes, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
   }
 }
 
@@ -193,8 +195,10 @@ const inBosphorus = (lat, lng) => lat >= 40.98 && lat <= 41.26 && lng >= 28.95 &
 
 export function windScore(r, i, hours, type, lat, lng) {
   const notes = [];
-  if (r.wind == null) return { score: null, notes };
+  if (r.wind == null) return { score: null, notes, dir: 0, dirNotes: [] };
   let s;
+  let dir = 0;            // yalnız yön/bölge etkisi (birleşik puan için; hız iki kez sayılmasın)
+  const dirNotes = [];
   const w = r.wind;
   if (w < 5) { s = 5.5; notes.push('Durgun'); }
   else if (w < 20) { s = 7.5; notes.push('Hafif-orta, ideal'); }
@@ -210,22 +214,22 @@ export function windScore(r, i, hours, type, lat, lng) {
   const month = r.date.getMonth() + 1;
   const coldSeason = month >= 10 || month <= 4;
   if (type === 'sea' && inMarmara(lat, lng) && isLodos(r.windDir) && w >= 20) {
-    s -= 1.5; notes.push('Sert lodos: Marmara/Boğaz\'da av zorlaşır');
+    s -= 1.5; dir -= 1.5; notes.push('Sert lodos: Marmara/Boğaz\'da av zorlaşır'); dirNotes.push([-1.5, 'Sert lodos: Marmara/Boğaz\'da av zorlaşır']);
     if (inBosphorus(lat, lng)) {
       const last = hours.slice(Math.max(0, i - 12), i + 1);
-      if (last.length >= 10 && last.every(h => isLodos(h.windDir) && h.wind >= 20)) { s -= 0.5; notes.push('12 saattir lodos: Boğaz\'da akıntı tersine dönebilir'); }
+      if (last.length >= 10 && last.every(h => isLodos(h.windDir) && h.wind >= 20)) { s -= 0.5; dir -= 0.5; notes.push('12 saattir lodos: Boğaz\'da akıntı tersine dönebilir'); dirNotes.push([-0.5, '12 saattir lodos: Boğaz\'da akıntı tersine dönebilir']); }
     }
   }
   if (type !== 'sea' && coldSeason && w >= 8) {
-    if (isNorthCold(r.windDir)) { s -= 1; notes.push('Soğuk kuzey rüzgarı suyu soğutur'); }
-    else if (isSouthWarm(r.windDir)) { s += 0.7; notes.push('Ilık güney rüzgarı suyu ısıtır'); }
+    if (isNorthCold(r.windDir)) { s -= 1; dir -= 1; notes.push('Soğuk kuzey rüzgarı suyu soğutur'); dirNotes.push([-1, 'Soğuk kuzey rüzgarı suyu soğutur']); }
+    else if (isSouthWarm(r.windDir)) { s += 0.7; dir += 0.7; notes.push('Ilık güney rüzgarı suyu ısıtır'); dirNotes.push([0.7, 'Ilık güney rüzgarı suyu ısıtır']); }
   }
   if (type !== 'sea' && w >= 8) {
     const last = hours.slice(Math.max(0, i - 24), i + 1).filter(h => h.windDir != null);
     const sameDir = last.length >= 20 && last.every(h => Math.abs(((h.windDir - r.windDir + 540) % 360) - 180) <= 45);
-    if (sameDir) { s += 0.3; notes.push('24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir'); }
+    if (sameDir) { s += 0.3; dir += 0.3; notes.push('24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir'); dirNotes.push([0.3, '24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir']); }
   }
-  return { score: Math.round(Math.max(0, Math.min(10, s)) * 10) / 10, notes };
+  return { score: Math.round(Math.max(0, Math.min(10, s)) * 10) / 10, notes, dir, dirNotes };
 }
 
 export const scoreClass = s => s >= 6.5 ? 's-good' : s >= 4.5 ? 's-mid' : 's-bad';
