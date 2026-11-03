@@ -736,7 +736,7 @@ async function renderRank(force = false) {
   }
   if (!places.length) {
     box.innerHTML = `<div class="rank-item empty">🎯 Henüz mera yok. Haritada balık tuttuğunuz yere <b>basılı tutun</b>
-      veya <b>＋</b> düğmesine dokunun. Meralar burada en iyiden kötüye sıralanır.</div>`;
+      ya da oraya dokunup <b>📍 Mera kaydet</b>'e basın. Meralar burada en iyiden kötüye sıralanır.</div>`;
     $('#rank-dots').innerHTML = '';
     return;
   }
@@ -784,8 +784,7 @@ async function renderRank(force = false) {
       </button>`;
     }).join('') +
     bad.map(x => `<div class="rank-item bad"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
-  $('#when-label').textContent = '⏱ ' + WHEN_SHORT[rankWhen];
-  $('#mode-label').textContent = combo ? '🎣💨 Balık+rüzgar' : '🎣 Balık';
+  $('#when-label').textContent = WHEN_SHORT[rankWhen] + (combo ? ' · 💨 rüzgarlı puan' : '');
   $('.map-bar').classList.toggle('offline', offline);
   $('#rank-refresh').title = `Yenile · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}${offline ? ' (çevrimdışı)' : ''}`;
   renderDots();
@@ -1541,11 +1540,7 @@ function bindEvents() {
   });
   try { localStorage.removeItem('recentSearches'); } catch { /* yok */ } // eski aramaları sil
   $('#map-fit').addEventListener('click', () => { initMap(); fitAll(); });
-  $('#map-add-spot').addEventListener('click', async () => {
-    initMap();
-    const p = meMarker ? meMarker.getLatLng() : null;
-    openSpotDialog(null, p || map.getCenter());
-  });
+
 
   // Harita popup düğmeleri
   document.addEventListener('click', e => {
@@ -1576,6 +1571,8 @@ function bindEvents() {
       $('#rank-custom').value = toLocalInput(d);
     }
     renderRank();
+    // Basit seçimlerde pencere kendiliğinden kapansın (gidip gelme / takvimde ayar gerekiyor)
+    if (!['trip', 'custom'].includes(rankWhen)) setTimeout(() => $('#rank-dialog').close(), 180);
   });
   $('#rank-custom').addEventListener('change', () => renderRank());
   renderModeToggle();
