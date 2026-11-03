@@ -7,6 +7,11 @@
 //  • Dalga ve rüzgar: hafif dalga suyu bulandırıp levreği kıyıya yaklaştırır; yüksek dalga avı düşürür ve tehlikelidir.
 //  • Fırtına sonrası bulanık su, yağış, dere kabarması.
 //  • Basınç ve ay (solunar): bilimsel kanıtı zayıf, bu yüzden düşük ağırlıkla eklendi.
+//
+// Ölçek: sık görülen "normal" şartlar (ılık su, hafif rüzgar, hafif dalga) küçük artı verir, böylece sıradan bir
+// saat "Orta" (≈5–6) kalır. Yeşil (≥6.5) için güçlü etkenlerin bir araya gelmesi gerekir: alacakaranlık,
+// fırtına sonrası bulanık su, en uygun su sıcaklığı gibi. (Kasım/Marmara benzetiminde saatlerin ~%33'ü yeşil,
+// bunların çoğu alacakaranlık; "Çok iyi" ≈ %2.)
 
 export const WATER_TYPES = {
   sea: { label: 'Deniz', icon: '🌊' },
@@ -89,7 +94,7 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     // 1) Işık
     const light = lightPhase(r.date, suns, mid);
     if (light === 'twilight') add(type === 'sea' ? 2 : 1.8, 'Alacakaranlık: avlanma saati');
-    else if (light === 'night') add(type === 'sea' ? 0.8 : 0.6, 'Gece');
+    else if (light === 'night') add(type === 'sea' ? 0.5 : 0.3, 'Gece');
     else if (light === 'midday') {
       if ((r.cloud ?? 0) >= 70) add(0.3, 'Kapalı hava, öğle güneşi yok');
       else add(-0.8, 'Öğle güneşi, balık derine çekilir');
@@ -101,16 +106,16 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     r.waterTempEstimated = type !== 'sea' || r.sst == null;
     if (wt != null) {
       if (type === 'sea') {
-        if (wt >= 12 && wt <= 22) add(1, `Su ${wt.toFixed(0)} °C: ideal aralık`);
+        if (wt >= 14 && wt <= 21) add(0.6, `Su ${wt.toFixed(0)} °C: ideal aralık`);
         else if (wt < 9) add(-0.8, `Su çok soğuk (${wt.toFixed(0)} °C)`);
         else if (wt > 26) add(-0.3, `Su çok sıcak (${wt.toFixed(0)} °C)`);
-        else add(0.3, `Su ${wt.toFixed(0)} °C`);
+        else add(0, `Su ${wt.toFixed(0)} °C`);
       } else {
-        if (wt >= 14 && wt <= 24) add(1.5, `Su ~${wt.toFixed(0)} °C: balık aktif`);
+        if (wt >= 16 && wt <= 24) add(1, `Su ~${wt.toFixed(0)} °C: balık aktif`);
         else if (wt < 6) add(-1.5, `Su çok soğuk (~${wt.toFixed(0)} °C), balık uyuşuk`);
         else if (wt < 10) add(-0.5, `Su soğuk (~${wt.toFixed(0)} °C)`);
         else if (wt > 27) add(-0.5, `Su çok sıcak (~${wt.toFixed(0)} °C), oksijen az`);
-        else add(0.5, `Su ~${wt.toFixed(0)} °C`);
+        else add(0, `Su ~${wt.toFixed(0)} °C`);
         // Ani soğuma
         const recent = avg(hours.slice(Math.max(0, i - 48), i + 1).map(h => h.temp));
         const before = avg(hours.slice(Math.max(0, i - 120), Math.max(0, i - 48)).map(h => h.temp));
@@ -121,26 +126,26 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     // 3) Dalga (deniz)
     if (type === 'sea' && r.wave != null) {
       if (r.wave < 0.15) add(0.2, 'Deniz çarşaf, su berrak');
-      else if (r.wave < 0.8) add(1, `Hafif dalga (${r.wave.toFixed(1)} m), su hareketli`);
+      else if (r.wave < 0.8) add(0.5, `Hafif dalga (${r.wave.toFixed(1)} m), su hareketli`);
       else if (r.wave < 1.25) add(0, `Dalga ${r.wave.toFixed(1)} m`);
       else if (r.wave < 2) add(-1.5, `Dalga yüksek (${r.wave.toFixed(1)} m)`);
       else { add(-3, `Dalga tehlikeli (${r.wave.toFixed(1)} m)`); danger = true; }
       // Fırtına sonrası bulanık su
       const maxPast = max(past(36).map(h => h.wave));
-      if (maxPast != null && maxPast >= 1.5 && r.wave < 1) add(0.6, 'Fırtına sonrası bulanık su (levrek için iyi)');
+      if (maxPast != null && maxPast >= 1.5 && r.wave < 1) add(0.8, 'Fırtına sonrası bulanık su (levrek için iyi)');
     }
 
     // 4) Rüzgar
     if (r.wind != null) {
       if (type === 'sea') {
         if (r.wind < 5) add(0, 'Rüzgar yok');
-        else if (r.wind < 20) add(0.8, 'Rüzgar hafif-orta');
+        else if (r.wind < 20) add(0.3, 'Rüzgar hafif-orta');
         else if (r.wind < 30) add(0, 'Rüzgar orta-sert');
         else if (r.wind < 40) add(-1, 'Rüzgar sert, atış zor');
         else { add(-2.5, 'Rüzgar çok sert'); danger = true; }
       } else {
         if (r.wind < 4) add(0, 'Su ayna gibi, balık temkinli');
-        else if (r.wind < 20) add(0.8, 'Hafif rüzgar, suda kırışıklık');
+        else if (r.wind < 20) add(0.3, 'Hafif rüzgar, suda kırışıklık');
         else if (r.wind < 30) add(0, 'Rüzgar orta-sert');
         else { add(-1.5, 'Rüzgar sert'); if (r.wind >= 40) danger = true; }
       }
