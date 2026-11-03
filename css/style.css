@@ -434,6 +434,8 @@ body.map-mode main { padding: 0; max-width: none; }
 }
 #tab-map #map { position: absolute; inset: 0; height: auto; min-height: 0; border: 0; border-radius: 0; }
 .map-float-top { position: absolute; top: 10px; left: 10px; right: 62px; z-index: 700; }
+.map-float-top:has(.map-results:not([hidden])) { z-index: 850; }
+.map-float-top.open { z-index: 850; }
 .map-float-top .map-search { margin: 0; }
 .map-float-top .map-search input { box-shadow: 0 2px 8px rgba(0,0,0,.2); }
 .map-float-top .map-search .btn { box-shadow: 0 2px 8px rgba(0,0,0,.2); }

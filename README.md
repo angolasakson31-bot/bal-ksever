@@ -14,7 +14,7 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
   dalga periyodu, akıntı, güneş ve ay doğuş/batış, solunar).
 - **Harita görünümleri (sağ üst düğme):** 🗺️ Detaylı (CARTO Voyager, bol isimli, varsayılan) · 🛰️ Uydu + isimler (Esri) · 🧭 Standart (OpenStreetMap, en güncel) · ⛰️ Topoğrafik (OpenTopoMap) · ⚓ Deniz işaretleri katmanı (OpenSeaMap). Hepsi ücretsiz, anahtarsız; seçim hatırlanır.
 - **Dokunulan yerin adı:** haritada bir noktaya dokununca o yerin adı (göl, köy, iskele…) gösterilir ve mera kaydında otomatik dolar.
-- **Haritada yer arama:** “Ankara”, “Sakarya Akyazı”, “Sapanca Gölü” gibi yer yazıp arayın; harita oraya gider, 📌 işaretten tek dokunuşla mera ekleyin veya tahmine bakın. Son 5 arama hatırlanır. (OpenStreetMap Nominatim, yedek: Open-Meteo yer araması)
+- **Haritada yer arama:** yazarken öneri (Photon) ve “Ara” ile ayrıntılı arama (Nominatim), iki ücretsiz OpenStreetMap servisi birlikte; Türkiye öncelikli, haritada bakılan bölgeye yakın sonuçlar önce, her sonuçta tür (köy, mahalle, dere, göl, iskele…) ve il/ilçe. Sonuca dokununca harita oraya gider (iğne konmaz); tam yeri kullanıcı seçer. Son 5 arama hatırlanır.
 - **Meraya basılı tut:** adını değiştir, sil, düzenle, av ekle, yol tarifi.
 - **Şu andan itibaren 6 saat (30 dk veya 15 dk adım):** her an için hava simgesi, sıcaklık, yağmur, rüzgar/hamle, dalga ve balık skoru. Open-Meteo'nun 15 dakikalık verisi kullanılır; olmayan yerlerde saatlik verinin arası hesaplanır.
 - **Saat saat görsel hava:** her saat için hava simgesi (güneş, bulut, yağmur, gece), sıcaklık, yağmur ihtimali sütunu, rüzgar ok + hız + hamle; 7 günlük gün kartları (simge, en yüksek/en düşük, yağış, rüzgar).
