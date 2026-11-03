@@ -421,3 +421,6 @@ dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radiu
 .wxh .wword { font-size: .66rem; color: var(--text-2); line-height: 1.1; margin-top: -2px; }
 .wxh .ico .drop { font-size: .7rem; margin-left: -6px; vertical-align: top; }
 .mini-wx .mi .drop { font-size: .55rem; margin-left: -4px; vertical-align: top; }
+.res-note { font-size: .8rem; color: var(--text-2); margin: 0 0 10px; }
+.res-note summary { cursor: pointer; }
+.res-note p { margin: 6px 0 0; line-height: 1.45; }
