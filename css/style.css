@@ -394,7 +394,7 @@ dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radiu
 .seg-mini button { border: 0; background: var(--surface); color: var(--text); padding: 5px 12px; font: inherit; font-size: .8rem; }
 .seg-mini button.active { background: var(--primary); color: var(--primary-ink); }
 .pt-name { margin-bottom: 6px; line-height: 1.3; }
-.leaflet-control-layers-expanded { font-size: 14px; line-height: 1.9; }
+.leaflet-control-layers-expanded { font-size: 14px; line-height: 1.9; color: #222; }
 
 /* Köşedeki rüzgar puanı */
 .rank-item, .score-card { position: relative; }
@@ -440,7 +440,7 @@ body.map-mode main { padding: 0; max-width: none; }
   position: fixed; left: 0; right: 0; top: var(--top-h, 56px);
   bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); overflow: hidden;
 }
-#tab-map #map { position: absolute; inset: 0; height: auto; min-height: 0; border: 0; border-radius: 0; }
+#tab-map #map { position: absolute; inset: 0; height: auto; min-height: 0; border: 0; border-radius: 0; z-index: auto; }
 .map-float-top { position: absolute; top: 10px; left: 10px; right: 62px; z-index: 700; }
 .map-float-top:has(.map-results:not([hidden])) { z-index: 850; }
 .map-float-top.open { z-index: 850; }
@@ -459,22 +459,6 @@ body.map-mode main { padding: 0; max-width: none; }
 }
 .round-btn.primary { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); font-size: 1.5rem; }
 .leaflet-top.leaflet-right { top: 0; }
-.sheet-panel {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 800; margin: 0 auto; max-width: 760px;
-  display: flex; flex-direction: column; background: var(--bg); border-radius: 18px 18px 0 0;
-  box-shadow: 0 -6px 20px rgba(0,0,0,.25); transition: height .25s ease; height: 50%;
-}
-.sheet-panel[data-state="peek"] { height: 128px; }
-.sheet-panel[data-state="half"] { height: 50%; }
-.sheet-panel[data-state="full"] { height: calc(100% - 8px); }
-.sheet-panel.dragging { transition: none; }
-.sheet-handle { flex: none; width: 100%; height: 26px; border: 0; background: none; display: flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; }
-.sheet-handle span { width: 46px; height: 5px; border-radius: 3px; background: var(--muted); opacity: .6; }
-.sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 0 16px 8px; touch-action: none; }
-.sheet-head h2 { font-size: 1.05rem; margin: 0; }
-.sheet-head h2 small { font-size: .78rem; font-weight: 500; color: var(--text-2); }
-.sheet-head .seg-mini button { padding: 6px 10px; font-size: .8rem; }
-.sheet-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 24px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .help-box { font-size: .8rem; color: var(--text-2); margin-bottom: 8px; }
 .help-box summary { cursor: pointer; padding: 4px 0; }
 .help-box p { margin: 6px 0; line-height: 1.45; }
@@ -597,3 +581,48 @@ body.map-mode main { padding: 0; max-width: none; }
 .install-steps { flex: 1; margin: 0; }
 .install-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .install-actions .btn { width: 100%; text-align: center; text-decoration: none; }
+
+/* ——— Harita: üst düğmeler + yana kayan mera kartları ——— */
+.map-bar { display: flex; gap: 6px; margin-top: 6px; }
+.pill-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 99px;
+  padding: 7px 12px; font: inherit; font-size: .85rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25); min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.pill-btn.icon { flex: none; width: 36px; padding: 7px 0; }
+.map-bar.offline #rank-refresh { border-color: #e0a100; }
+.map-fabs { top: auto; bottom: calc(var(--card-h, 260px) + 14px); }
+.carousel-wrap { position: absolute; left: 0; right: 0; bottom: 6px; z-index: 750; pointer-events: none; }
+.carousel {
+  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 24px 2px;
+  scrollbar-width: none; overscroll-behavior-x: contain; pointer-events: auto; scroll-padding: 0 24px;
+}
+.carousel::-webkit-scrollbar { display: none; }
+.carousel .rank-item {
+  flex: 0 0 min(340px, calc(100vw - 48px)); scroll-snap-align: center; scroll-snap-stop: always;
+  flex-direction: column; gap: 3px; align-items: stretch; padding: 10px 12px; margin: 0;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35); max-height: 230px; overflow: hidden;
+  transition: border-color .15s, transform .15s;
+}
+.carousel .rank-item.sel { border-color: var(--primary); }
+.carousel .rank-item.empty, .carousel .rank-item.bad { flex-basis: calc(100vw - 48px); max-width: 560px; color: var(--text-2); font-size: .9rem; line-height: 1.45; cursor: default; }
+.rank-top { display: flex; align-items: center; gap: 8px; }
+.rank-top .rank-no { width: auto; padding: 0; font-size: 1rem; color: var(--text); }
+.rank-top .rank-no small { color: var(--muted); font-weight: 500; font-size: .75rem; }
+.rank-top .score-pill { font-size: 1rem; min-width: 44px; padding: 3px 8px; }
+.rank-lbl { font-size: .8rem; color: var(--text-2); }
+.carousel .rank-name { padding-right: 0; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.carousel .rank-time, .carousel .rank-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-wx.fixed { overflow: hidden; scroll-snap-type: none; }
+.mini-wx.fixed .mc { flex: 1 1 0; }
+.dots { display: flex; justify-content: center; gap: 6px; padding: 6px 0 0; pointer-events: auto; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.55); box-shadow: 0 0 2px rgba(0,0,0,.6); cursor: pointer; }
+.dots i.on { background: var(--primary); width: 18px; border-radius: 4px; }
+.mk.sel .mk-dot { transform: scale(1.22); border-color: var(--primary); box-shadow: 0 0 0 4px rgba(57,135,229,.45), 0 2px 8px rgba(0,0,0,.5); }
+.mk-dot { transition: transform .15s; }
+#rank-dialog h2 { margin: 0 0 10px; font-size: 1.1rem; }
+#rank-dialog h3.sub { font-size: .85rem; color: var(--text-2); margin: 12px 0 6px; font-weight: 600; }
+.seg-mini.big button { padding: 9px 14px; font-size: .9rem; }
+.chips.wrap { flex-wrap: wrap; overflow: visible; }
+.btn.block { width: 100%; margin-top: 10px; }
+#rank-list.carousel { flex-direction: row; margin-bottom: 0; }

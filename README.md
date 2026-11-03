@@ -5,7 +5,7 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
 ## v1 özellikleri
 - **Av günlüğü:** fotoğraf, tür, boy, ağırlık, adet, yem, takım, mera, konum, not. Asgari boy uyarısı.
 - **Mera haritası:** meraları haritada işaretleme, avları haritada görme, Google/Apple yol tarifi.
-- **Harita & Meralarım (tek ekran):** tam ekran harita; arama kutusu ve 📍/🔍/＋ düğmeleri haritanın üstünde. Meralarım alttan açılan panelde (tutamaca dokun: aç/kapat, sürükle: küçült/büyüt; son durum hatırlanır). Haritadaki işaretlerde sıra numarası ve skor rengi görünür.
+- **Harita & Meralarım (tek ekran):** tam ekran harita; arama kutusu ve 📍/🔍/＋ düğmeleri haritanın üstünde. Meralarım en altta yana kayan kartlarda (kaydırınca harita o meraya gider; karta dokun: detay). Saat ve puan türü üstteki ⏱ / 🎣 düğmelerinden seçilir. Haritada yuvarlağa dokun: kartı gelir, tekrar dokun: detay. Haritadaki işaretlerde sıra numarası ve skor rengi görünür.
   Zaman seçenekleri tam o andan itibaren hesaplanır (15 dk hassasiyet): şimdi, +½/+1/+2/+3/+5/+6/+12 saat, bu akşam, yarın sabah, yarın akşam, 24 saatin en iyisi, 7 gün içinde istenen gün/saat.
   **🚗 Gidip geleceğim:** “kaç saat sonra çıkacaksınız / kaç saat kalacaksınız” seçilir; meralar o aralığın ortalama skoruna göre sıralanır, her merada aralık boyunca skor şeridi ve en iyi an görünür.
 - **Meraya dokun → ayrıntılı tahmin (sekmeli):** üstte puan ve öneri; altında ⏱️ Saatlik · 🐟 Türler · 📈 Grafikler · 🌤️ Ayrıntı sekmeleri.

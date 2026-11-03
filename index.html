@@ -47,6 +47,11 @@
           <input id="map-q" type="search" placeholder="🔎 Yer ara: Ankara, Sapanca, Akyazı…" enterkeyhint="search" autocomplete="off">
           <button type="submit" class="btn primary">Ara</button>
         </form>
+        <div class="map-bar">
+          <button type="button" class="pill-btn" data-open-rank><span id="when-label">⏱ Şimdi</span> ▾</button>
+          <button type="button" class="pill-btn" data-open-rank><span id="mode-label">🎣 Balık</span> ▾</button>
+          <button type="button" class="pill-btn icon" id="rank-refresh" aria-label="Yenile" title="Yenile">↻</button>
+        </div>
         <div id="map-recent" class="chips recent"></div>
         <div id="map-results" class="map-results" hidden></div>
       </div>
@@ -57,53 +62,10 @@
         <button id="map-add-spot" class="round-btn primary" title="Mera ekle" aria-label="Mera ekle">＋</button>
       </div>
 
-      <div id="sheet" class="sheet-panel" data-state="half">
-        <button id="sheet-handle" class="sheet-handle" aria-label="Paneli aç/kapat"><span></span></button>
-        <div class="sheet-head">
-          <h2>🎯 Meralarım <small id="sheet-count"></small></h2>
-          <span class="seg-mini" id="rank-mode">
-            <button data-mode="fish">🎣 Balık</button>
-            <button data-mode="combo">🎣💨 Balık + rüzgar</button>
-          </span>
-        </div>
-        <div class="sheet-body" id="sheet-body">
-          <details class="help-box"><summary>❓ Puanlar ve kullanım</summary>
-            <p id="rank-mode-help"></p>
-            <p>Meraya dokunun: saat saat hava ve balık tahmini. Meraya basılı tutun: adını değiştirin veya silin. Haritada boş yere dokunun: o noktanın puanı; boş yere basılı tutun: yeni mera.</p>
-            <p>Puan 0–10 arası bir tahmindir. Veriler her açılışta Open-Meteo'dan güncel çekilir (7 gün, saatlik).</p>
-          </details>
-          <div class="chips" id="rank-when">
-            <button data-when="now" class="active">Şimdi</button>
-            <button data-when="o0.5">+½ saat</button>
-            <button data-when="o1">+1 saat</button>
-            <button data-when="o2">+2 saat</button>
-            <button data-when="o3">+3 saat</button>
-            <button data-when="o5">+5 saat</button>
-            <button data-when="o6">+6 saat</button>
-            <button data-when="o12">+12 saat</button>
-            <button data-when="trip">🚗 Gidip geleceğim</button>
-            <button data-when="evening">Bu akşam</button>
-            <button data-when="morning">Yarın sabah</button>
-            <button data-when="tomorrowEvening">Yarın akşam</button>
-            <button data-when="best24">24 saatin en iyisi</button>
-            <button data-when="custom">📅 Gün/saat seç</button>
-          </div>
-          <div id="trip-row" class="card trip-row" hidden>
-            <div class="stepper"><span>Kaç saat sonra çıkacaksınız?</span>
-              <button type="button" data-step="go:-0.5">−</button><b id="trip-go">1</b><button type="button" data-step="go:0.5">＋</button></div>
-            <div class="stepper"><span>Kaç saat kalacaksınız?</span>
-              <button type="button" data-step="stay:-0.5">−</button><b id="trip-stay">4</b><button type="button" data-step="stay:0.5">＋</button></div>
-            <p class="muted" id="trip-text"></p>
-          </div>
-          <div id="rank-custom-row" class="filter-row" hidden>
-            <input id="rank-custom" type="datetime-local">
-          </div>
-          <div class="filter-row">
-            <label class="check" style="margin:0;flex:1"><input type="checkbox" id="rank-me"> Konumumu da ekle</label>
-            <button id="rank-refresh" class="btn small">↻ Yenile</button>
-          </div>
-          <div id="rank-list"></div>
-        </div>
+      <!-- Yana kayan mera kartları -->
+      <div class="carousel-wrap">
+        <div id="rank-list" class="carousel" aria-label="Meralarım (sağa/sola kaydırın)"></div>
+        <div id="rank-dots" class="dots" aria-hidden="true"></div>
       </div>
     </section>
 
@@ -249,6 +211,51 @@
   </dialog>
 
   <!-- Ana ekrana ekleme talimatı -->
+  <!-- Sıralama ayarları -->
+  <dialog id="rank-dialog" class="sheet">
+    <h2>🎯 Meraları sırala</h2>
+    <h3 class="sub">Puan türü</h3>
+    <span class="seg-mini big" id="rank-mode">
+      <button data-mode="fish">🎣 Balık</button>
+      <button data-mode="combo">🎣💨 Balık + rüzgar</button>
+    </span>
+    <p class="muted mode-help" id="rank-mode-help"></p>
+    <h3 class="sub">Ne zaman?</h3>
+    <div class="chips wrap" id="rank-when">
+      <button data-when="now" class="active">Şimdi</button>
+      <button data-when="o0.5">+½ saat</button>
+      <button data-when="o1">+1 saat</button>
+      <button data-when="o2">+2 saat</button>
+      <button data-when="o3">+3 saat</button>
+      <button data-when="o5">+5 saat</button>
+      <button data-when="o6">+6 saat</button>
+      <button data-when="o12">+12 saat</button>
+      <button data-when="trip">🚗 Gidip geleceğim</button>
+      <button data-when="evening">Bu akşam</button>
+      <button data-when="morning">Yarın sabah</button>
+      <button data-when="tomorrowEvening">Yarın akşam</button>
+      <button data-when="best24">24 saatin en iyisi</button>
+      <button data-when="custom">📅 Gün/saat seç</button>
+    </div>
+    <div id="trip-row" class="card trip-row" hidden>
+      <div class="stepper"><span>Kaç saat sonra çıkacaksınız?</span>
+        <button type="button" data-step="go:-0.5">−</button><b id="trip-go">1</b><button type="button" data-step="go:0.5">＋</button></div>
+      <div class="stepper"><span>Kaç saat kalacaksınız?</span>
+        <button type="button" data-step="stay:-0.5">−</button><b id="trip-stay">4</b><button type="button" data-step="stay:0.5">＋</button></div>
+      <p class="muted" id="trip-text"></p>
+    </div>
+    <div id="rank-custom-row" class="filter-row" hidden>
+      <input id="rank-custom" type="datetime-local">
+    </div>
+    <label class="check"><input type="checkbox" id="rank-me"> Konumumu da listeye ekle</label>
+    <details class="help-box"><summary>❓ Nasıl kullanılır?</summary>
+      <p>Kartları sağa/sola kaydırın: harita o meraya gider. Karta dokunun: saat saat hava ve balık tahmini. Karta basılı tutun: adını değiştirin veya silin.</p>
+      <p>Haritada meranın yuvarlağına dokunun: kartı gelir; tekrar dokunun: detay açılır. Boş yere dokunun: o noktanın puanı. Boş yere basılı tutun: yeni mera.</p>
+      <p>Puan 0–10 arası bir tahmindir. Veriler her açılışta Open-Meteo'dan güncel çekilir (7 gün, saatlik).</p>
+    </details>
+    <button type="button" class="btn primary block" id="rank-dialog-close">Tamam</button>
+  </dialog>
+
   <dialog id="install-dialog">
     <h2>📲 Ana ekrana ekle</h2>
     <p class="muted">Tarayıcınız: <b id="install-browser"></b>. Bu tarayıcı siteye kendiliğinden simge ekleme izni vermiyor; ama menüsünden 3 dokunuşla eklenir:</p>
