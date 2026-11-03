@@ -500,6 +500,7 @@ function showResults(res, q) {
   const box = $('#map-results');
   state.searchResults = res;
   box.hidden = false;
+  box.parentElement.classList.add('open');
   const sheet = $('#sheet');
   if (sheet && res.length) sheet.dataset.state = 'peek'; // sonuçlar görünsün
   box.innerHTML = res.length
@@ -513,6 +514,7 @@ function goToPlace(p) {
   initMap();
   if (!map) return;
   $('#map-results').hidden = true;
+  $('#map-results').parentElement.classList.remove('open');
   $('#map-q').blur();
   if (p.bbox && p.bbox.every(Number.isFinite) && (p.bbox[1] - p.bbox[0]) > 0.0005) {
     map.fitBounds([[p.bbox[0], p.bbox[2]], [p.bbox[1], p.bbox[3]]], { maxZoom: 15, padding: [30, 30] });
@@ -548,7 +550,7 @@ async function onMapSearch(e) {
 function onMapTyping() {
   clearTimeout(searchTimer);
   const q = $('#map-q').value.trim();
-  if (q.length < 3) { if (!q) $('#map-results').hidden = true; return; }
+  if (q.length < 3) { if (!q) { $('#map-results').hidden = true; $('#map-results').parentElement.classList.remove('open'); } return; }
   searchTimer = setTimeout(async () => {
     const seq = ++searchSeq;
     try {
@@ -1349,7 +1351,7 @@ function bindEvents() {
   $('#map-q').addEventListener('input', onMapTyping);
   $('#map-results').addEventListener('click', e => {
     const b = e.target.closest('[data-result]'); if (!b) return;
-    if (b.dataset.result === 'close') { $('#map-results').hidden = true; return; }
+    if (b.dataset.result === 'close') { $('#map-results').hidden = true; $('#map-results').parentElement.classList.remove('open'); return; }
     goToPlace(state.searchResults[+b.dataset.result]);
   });
   $('#map-recent').addEventListener('click', e => {
