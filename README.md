@@ -67,3 +67,6 @@ python3 -m http.server 8000
 - [ ] v2: sıralama tablosu, rozetler, aylık yarışma
 - [ ] Plan/buluşma, bildirimler
 - [ ] Fotoğraftan tür tanıma
+
+## 👥 Arkadaş grubu
+Grup linkine (`…/?grup=KOD`) girenler aynı meraları ve avları görür, ekler, düzenler ve siler; kimin eklediği yazar, yeni kayıtlar uygulama içinde duyurulur. Normal link kişiseldir ve grupla karışmaz. Grup oluşturma: Rehber → Ayarlar → 👥 Arkadaş grubu. Sunucu kurulumu: [server/README.md](server/README.md).

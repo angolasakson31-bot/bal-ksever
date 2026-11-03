@@ -1,7 +1,7 @@
 // Çevrimdışı çalışma: uygulama dosyalarını önbelleğe al.
-const VERSION = 'rastgele-v42';
+const VERSION = 'rastgele-v43';
 const CORE = [
-  './', 'index.html', 'css/style.css', 'js/app.js', 'js/db.js', 'js/data.js', 'js/weather.js', 'js/fishscore.js', 'js/species-model.js', 'js/timeline.js', 'js/guide.js', 'js/knots.js',
+  './', 'index.html', 'css/style.css', 'js/app.js', 'js/db.js', 'js/data.js', 'js/weather.js', 'js/fishscore.js', 'js/species-model.js', 'js/timeline.js', 'js/guide.js', 'js/knots.js', 'js/group.js', 'js/config.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon-maskable-192.png', 'icons/icon-maskable-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
