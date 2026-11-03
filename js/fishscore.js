@@ -190,8 +190,10 @@ const inSector = (deg, from, to) => { const d = ((deg % 360) + 360) % 360; retur
 const isLodos = d => d != null && inSector(d, 202.5, 247.5);
 const isNorthCold = d => d != null && inSector(d, 292.5, 67.5);   // karayel, yıldız, poyraz
 const isSouthWarm = d => d != null && inSector(d, 112.5, 247.5);  // keşişleme, kıble, lodos
-const inMarmara = (lat, lng) => lat >= 40.2 && lat <= 41.35 && lng >= 26.4 && lng <= 30.0;
-const inBosphorus = (lat, lng) => lat >= 40.98 && lat <= 41.26 && lng >= 28.95 && lng <= 29.2;
+// Boğaz: Kadıköy/Sarayburnu'ndan Rumeli/Anadolu Feneri'ne kadar (Kilyos gibi Karadeniz kıyısı hariç)
+const inBosphorus = (lat, lng) => lat >= 40.99 && lat <= 41.22 && lng >= 28.97 && lng <= 29.15;
+// Marmara Denizi kıyıları (Silivri 41.07 dahil; İstanbul'un Karadeniz kıyısı 41.15+ hariç) + Boğaz
+const inMarmara = (lat, lng) => (lat >= 40.2 && lat <= 41.1 && lng >= 26.4 && lng <= 29.95) || inBosphorus(lat, lng);
 
 export function windScore(r, i, hours, type, lat, lng) {
   const notes = [];
