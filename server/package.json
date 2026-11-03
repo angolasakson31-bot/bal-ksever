@@ -1,0 +1,10 @@
+{
+  "name": "rastgele-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rastgele arkadaş grubu sunucusu (ortak meralar ve avlar)",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "mongodb": "^6.8.0" }
+}

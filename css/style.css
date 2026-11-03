@@ -802,3 +802,15 @@ body.map-mode .top-install { padding: 4px 10px; font-size: .72rem; }
 .here-close { position: absolute; top: 0; left: calc(50% - min(116px, calc(50vw - 60px)) - 10px); z-index: 2; width: 24px; height: 24px; border-radius: 50%;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: .7rem; box-shadow: 0 1px 4px rgba(0,0,0,.3); cursor: pointer; }
 .round-btn.here-btn.on { background: #1a73e8; border-color: #1a73e8; }
+
+/* ——— Arkadaş grubu ——— */
+.group-bar { position: sticky; top: var(--topbar-h, 44px); z-index: 999; display: flex; align-items: center; gap: 6px; padding: 5px 10px; background: #1f7a4d; color: #fff; font-size: .82rem; }
+.group-bar .gb-main { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb-status { opacity: .85; font-size: .7rem; margin-left: 4px; }
+.gb-status.ok { opacity: .75; }
+.gb-btn { flex: none; border: 1px solid rgba(255,255,255,.5); background: rgba(255,255,255,.12); color: #fff; border-radius: 99px; padding: 3px 9px; font: inherit; font-size: .72rem; cursor: pointer; }
+body.group-mode .topbar { background: #155e3a; }
+.tag.new { background: #e6f6ea; color: #1f7a4d; }
+.rank-name .by { font-size: .58rem; color: var(--text-2); font-weight: 500; }
+.group-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.group-row .row { gap: 4px; }

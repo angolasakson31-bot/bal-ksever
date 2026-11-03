@@ -1,9 +1,21 @@
 // Basit IndexedDB sarmalayıcısı. Tüm veriler telefonun içinde saklanır.
-const DB_NAME = 'rastgele';
-const DB_VERSION = 1;
-export const STORES = ['catches', 'spots'];
+// Kişisel kayıtlar 'rastgele' veritabanında; her arkadaş grubunun kopyası ayrı bir veritabanında
+// ('rastgele-g-<kod>'). İkisi hiç karışmaz.
+let DB_NAME = 'rastgele';
+const DB_VERSION = 2;
+export const STORES = ['catches', 'spots', 'outbox', 'meta'];
+const KEYS = { outbox: 'k', meta: 'k' };
 
 let dbPromise;
+let writeHook = null; // grup modunda kayıtları sunucuya göndermek için
+
+// Hangi veritabanı kullanılacak (kişisel / grup)
+export function use(name) {
+  if (name === DB_NAME) return;
+  DB_NAME = name; dbPromise = null;
+}
+export const current = () => DB_NAME;
+export function onWrite(fn) { writeHook = fn; }
 
 function open() {
   if (dbPromise) return dbPromise;
@@ -12,7 +24,7 @@ function open() {
     req.onupgradeneeded = () => {
       const db = req.result;
       for (const name of STORES) {
-        if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: KEYS[name] || 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -32,8 +44,14 @@ function run(store, mode, fn) {
 
 export const getAll = store => run(store, 'readonly', s => s.getAll());
 export const get = (store, id) => run(store, 'readonly', s => s.get(id));
-export const put = (store, value) => run(store, 'readwrite', s => s.put(value));
-export const remove = (store, id) => run(store, 'readwrite', s => s.delete(id));
+// silent: sunucudan gelen kaydı yazarken tekrar sunucuya gönderme
+export const put = (store, value, { silent = false } = {}) => run(store, 'readwrite', s => s.put(value))
+  .then(r => { if (!silent && writeHook && (store === 'spots' || store === 'catches')) writeHook(store, 'put', value); return r; });
+export const remove = (store, id, { silent = false } = {}) => run(store, 'readwrite', s => s.delete(id))
+  .then(r => { if (!silent && writeHook && (store === 'spots' || store === 'catches')) writeHook(store, 'delete', { id }); return r; });
+export function deleteDatabase(name) {
+  return new Promise(resolve => { const r = indexedDB.deleteDatabase(name); r.onsuccess = r.onerror = r.onblocked = () => resolve(); });
+}
 export const clear = store => run(store, 'readwrite', s => s.clear());
 
 export function newId() {

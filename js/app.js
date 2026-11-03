@@ -5,6 +5,7 @@ import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, score
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
 import { renderKnots, renderRigs } from './guide.js';
+import * as grp from './group.js';
 
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -23,7 +24,7 @@ function toast(msg, ms = 2500) {
 }
 
 function photoUrl(c) {
-  if (!c.photo) return null;
+  if (!c.photo) return c.photoUrl || null; // grup kaydı: fotoğraf Cloudinary'de
   if (!state.photoUrls.has(c.id)) state.photoUrls.set(c.id, URL.createObjectURL(c.photo));
   return state.photoUrls.get(c.id);
 }
@@ -97,8 +98,10 @@ function refreshAll() {
 // Tam ekran harita için üst çubuğun (ve kurulum ipucunun) yüksekliği
 function updateTopH() {
   const hint = $('#install-hint');
-  const h = $('.topbar').offsetHeight + (hint && !hint.hidden ? hint.offsetHeight : 0);
+  const gb = $('#group-bar');
+  const h = $('.topbar').offsetHeight + (hint && !hint.hidden ? hint.offsetHeight : 0) + (gb && !gb.hidden ? gb.offsetHeight : 0);
   document.documentElement.style.setProperty('--top-h', h + 'px');
+  document.documentElement.style.setProperty('--topbar-h', $('.topbar').offsetHeight + 'px');
 }
 
 function setupResize() {
@@ -141,10 +144,10 @@ function renderCatches() {
     const sp = findSpecies(c.species);
     const url = photoUrl(c);
     const thumb = url ? `<img class="catch-thumb" src="${url}" alt="">` : `<div class="catch-thumb">${sp?.emoji || '🐟'}</div>`;
-    const meta = [fmtTime(c.date), c.length && `${c.length} cm`, c.weight && `${c.weight} g`, c.bait, spotById(c.spotId)?.name]
+    const meta = [fmtTime(c.date), c.length && `${c.length} cm`, c.weight && `${c.weight} g`, c.bait, spotById(c.spotId)?.name, c.by && `👤 ${c.by}`]
       .filter(Boolean).map(esc).join(' · ');
     html += `<button class="catch-item" data-id="${c.id}">${thumb}<div class="catch-body">
-      <div class="catch-title">${esc(c.species)}${c.count > 1 ? ` <span class="tag">×${c.count}</span>` : ''}${c.released ? '<span class="tag">salındı</span>' : ''}</div>
+      <div class="catch-title">${state.newIds?.has(c.id) ? '<span class="tag new">🆕</span> ' : ''}${esc(c.species)}${c.count > 1 ? ` <span class="tag">×${c.count}</span>` : ''}${c.released ? '<span class="tag">salındı</span>' : ''}</div>
       <div class="catch-meta">${meta}</div></div></button>`;
   }
   list.innerHTML = html;
@@ -830,7 +833,7 @@ function spotCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
       <span class="rank-no">${no}</span>
       ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
     </span>
-    <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
+    <span class="rank-name">${state.newIds?.has(a.place.key) ? '<span class="tag new">🆕</span> ' : ''}${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span>${a.place.by ? ` <span class="by">👤 ${esc(a.place.by)}</span>` : ''}</span>
     <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
     ${miniWx(a, r.date)}
     <span class="rank-meta">🐟 ${esc(sp)}</span>
@@ -1390,8 +1393,8 @@ function renderMore() {
     </div>
 
 `,
-    settings: () => `${installCard()}    <div class="card"><h3>💾 Yedekleme</h3>
-      <p class="muted">Verileriniz sadece bu telefonda saklanıyor. Telefonu değiştirmeden önce veya ara ara yedek alın.</p>
+    settings: () => `${groupCard()}${installCard()}    <div class="card"><h3>💾 Yedekleme</h3>
+      <p class="muted">${grp.group.code ? 'Bu yedek grubun kayıtlarını içerir.' : 'Verileriniz sadece bu telefonda saklanıyor.'} Telefonu değiştirmeden önce veya ara ara yedek alın.</p>
       <div class="row" style="flex-wrap:wrap">
         <button class="btn" id="export-btn">⬇️ Yedek indir</button>
         <label class="btn" style="margin:0;color:var(--text)">⬆️ Yedek yükle<input type="file" id="import-file" accept="application/json,.json" hidden></label>
@@ -1404,6 +1407,94 @@ function renderMore() {
     </div>`,
   };
   $('#more-content').innerHTML = `<div class="dtabs more-tabs">${TABS.map(([k, l]) => `<button data-more="${k}" class="${k === moreTab ? 'active' : ''}">${l}</button>`).join('')}</div>${body[moreTab]()}`;
+}
+
+// ————————————————— Arkadaş grubu —————————————————
+state.newIds = new Set();
+async function setupGroup() {
+  const code = grp.codeFromUrl();
+  if (!code) return;
+  if (!grp.groupReady()) { toast('Grup özelliği henüz kurulmadı. Kişisel kayıtlar gösteriliyor.', 5000); return; }
+  if (!grp.myName()) {
+    const n = prompt('👥 Gruba hoş geldin! Adın ne? (Eklediğin meralarda ve avlarda görünecek)', '');
+    if (n && n.trim()) grp.setMyName(n);
+  }
+  document.body.classList.add('group-mode');
+  $('#group-bar').hidden = false;
+  await grp.enterGroup(code, onGroupEvent);
+  renderGroupBar();
+  updateTopH();
+}
+
+let reloadT = null;
+function onGroupEvent(ev) {
+  renderGroupBar();
+  if (ev.error) toast('👥 ' + ev.error, 6000);
+  if (ev.fresh?.length) {
+    ev.fresh.forEach(f => { if (f.isNew) state.newIds.add(f.id); });
+    const by = new Map();
+    for (const f of ev.fresh.filter(x => x.isNew)) {
+      const k = f.by; const o = by.get(k) || { spots: [], catches: 0 }; by.set(k, o);
+      if (f.store === 'spots') o.spots.push(f.doc.name); else o.catches += 1;
+    }
+    const msg = [...by].map(([n, o]) => `${n}: ${[o.spots.length ? `yeni mera ${o.spots.slice(0, 2).join(', ')}${o.spots.length > 2 ? '…' : ''}` : '', o.catches ? `${o.catches} yeni av` : ''].filter(Boolean).join(', ')}`).join(' · ');
+    if (msg) toast('👥 ' + msg, 6000);
+  }
+  if (ev.changed) {
+    clearTimeout(reloadT);
+    reloadT = setTimeout(async () => { await loadData(); refreshAll(); if (state.tab === 'map') renderRank(); if (state.tab === 'more') renderMore(); }, 150);
+  }
+}
+
+function renderGroupBar() {
+  const g = grp.group;
+  if (!g.code) return;
+  $('#group-name').textContent = g.name || 'Grup';
+  $('#group-status').textContent = g.pending ? `⏳ ${g.pending} kayıt gönderilecek` : g.online ? '● güncel' : '○ sunucu uyanıyor / internet yok';
+  $('#group-status').className = 'gb-status' + (g.online && !g.pending ? ' ok' : '');
+}
+
+function groupCard() {
+  if (!grp.groupReady()) return `<div class="card"><h3>👥 Arkadaş grubu</h3><p class="muted">Grup özelliği henüz kurulmadı (sunucu adresi ayarlanınca açılacak).</p></div>`;
+  const g = grp.group, list = grp.joinedGroups();
+  const row = x => `<div class="group-row"><span><b>${esc(x.name)}</b>${x.code === g.code ? ' <span class="tag">şu an açık</span>' : ''}</span>
+    <span class="row">${x.code === g.code ? '' : `<button class="btn small" data-gact="open" data-code="${x.code}">Aç</button>`}
+    <button class="btn small" data-gact="share" data-code="${x.code}">📤 Link</button>
+    <button class="btn small danger" data-gact="leave" data-code="${x.code}">Çık</button></span></div>`;
+  return `<div class="card"><h3>👥 Arkadaş grubu</h3>
+    <p class="muted">Grup linkine girenler aynı meraları ve avları görür, ekler, düzenler. Normal linkte her şey kişisel kalır, grupla karışmaz.</p>
+    ${list.length ? list.map(row).join('') : ''}
+    <form id="group-create" class="row" style="margin-top:8px"><input id="group-new-name" placeholder="Yeni grup adı (ör. Bağırganlı Ekibi)" maxlength="40"><button class="btn primary small" type="submit">Oluştur</button></form>
+    <p class="muted" style="margin-top:8px">Adın: <b>${esc(grp.myName() || '—')}</b> <button class="btn small" data-gact="name">Değiştir</button></p>
+  </div>`;
+}
+
+async function shareGroup(code, name) {
+  const url = grp.groupLink(code);
+  const text = `🎣 ${name || 'Balık grubu'} – Rastgele'de ortak meralarımız ve avlarımız: ${url}`;
+  if (navigator.share) { try { await navigator.share({ title: 'Rastgele grup', text, url }); return; } catch { /* vazgeçti */ } }
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+async function onGroupAction(act, code) {
+  if (act === 'create') {
+    const name = $('#group-new-name').value.trim() || 'Balık grubu';
+    if (!grp.myName()) { const n = prompt('Adın ne? (Gruptakiler görecek)', ''); if (n && n.trim()) grp.setMyName(n); }
+    try {
+      toast('Grup oluşturuluyor… (sunucu uyuyorsa 30 sn sürebilir)', 4000);
+      const r = await grp.createGroup(name);
+      renderMore();
+      if (confirm(`"${r.name}" grubu oluşturuldu! Linki şimdi WhatsApp grubunuza gönderelim mi?`)) await shareGroup(r.code, r.name);
+    } catch (e) { toast('Grup oluşturulamadı: ' + e.message, 5000); }
+  }
+  if (act === 'open') location.href = grp.groupLink(code);
+  if (act === 'share') shareGroup(code, grp.joinedGroups().find(x => x.code === code)?.name);
+  if (act === 'leave') {
+    if (!confirm('Bu gruptan çıkılsın mı? Gruptaki kayıtlar silinmez, sadece bu telefondan kaldırılır. Link ile tekrar girebilirsin.')) return;
+    if (code === grp.group.code) { await grp.leaveGroup(code); location.href = location.pathname; return; }
+    await grp.leaveGroup(code); renderMore();
+  }
+  if (act === 'name') { const n = prompt('Adın:', grp.myName()); if (n && n.trim()) { grp.setMyName(n); renderMore(); } }
 }
 
 const blobToDataUrl = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
@@ -1707,6 +1798,9 @@ function bindEvents() {
     }
     if (e.target.id === 'import-file' && e.target.files[0]) importBackup(e.target.files[0]);
   });
+  $('#more-content').addEventListener('submit', e => { if (e.target.id === 'group-create') { e.preventDefault(); onGroupAction('create'); } });
+  $('#group-exit').addEventListener('click', () => { location.href = location.pathname; });
+  $('#group-share').addEventListener('click', () => shareGroup(grp.group.code, grp.group.name));
   $('#more-content').addEventListener('click', e => {
     const mt = e.target.closest('[data-more]');
     if (mt) { moreTab = mt.dataset.more; renderMore(); window.scrollTo(0, 0); return; }
@@ -1714,6 +1808,8 @@ function bindEvents() {
     if (rk) { rigKind = rk.dataset.rig; renderMore(); return; }
     if (e.target.closest('#install-btn2')) { installApp(); return; }
     if (e.target.id === 'export-btn') exportBackup();
+    const ga = e.target.closest('[data-gact]');
+    if (ga) onGroupAction(ga.dataset.gact, ga.dataset.code);
     if (e.target.id === 'check-reset') { try { localStorage.removeItem('checklist'); } catch { /* yok */ } renderMore(); }
   });
 }
@@ -1724,6 +1820,7 @@ async function init() {
   bindSugg();
   setupResize();
   setupInstallHint();
+  await setupGroup(); // ?grup=KOD ile açıldıysa grubun veritabanına geç
   await loadData();
   refreshAll();
   showTab('map'); // uygulama her açılışta haritayla başlar
