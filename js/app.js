@@ -417,14 +417,15 @@ function renderMapMarkers() {
 }
 
 async function locateMe() {
-  try {
-    const p = await getPosition();
-    initMap();
+  let p;
+  try { p = await getPosition(); } catch (e) { toast(e.message); return null; }
+  initMap();
+  if (map) { // harita yüklenemese de konum kullanılabilsin
     map.setView([p.lat, p.lng], 15);
     if (meMarker) meMarker.setLatLng([p.lat, p.lng]);
     else meMarker = L.circleMarker([p.lat, p.lng], { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
-    return p;
-  } catch (e) { toast(e.message); return null; }
+  }
+  return p;
 }
 
 // ————————————————— Yer arama —————————————————
@@ -769,27 +770,13 @@ async function renderRank(force = false) {
   const offline = results.some(x => x.a?.cond.offline);
   const total = ok.length;
   box.innerHTML =
-    ok.map((x, i) => {
-      const { a, r } = x;
-      if (x.trip) return tripCard(x, i, total);
-      const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
-      return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(r)}
-        <span class="rank-top">
-          <span class="rank-no">${i + 1}<small>/${total}</small></span>
-          ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
-        </span>
-        <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
-        <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
-        ${miniWx(a, r.date)}
-        <span class="rank-meta">🐟 ${esc(sp)}</span>
-        ${catchLine(a.place)}
-      </button>`;
-    }).join('') +
+    ok.map((x, i) => (x.trip ? tripCard(x, i, total) : spotCard(x, i, total))).join('') +
     bad.map(x => `<div class="rank-item bad"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
   $('#when-label').textContent = WHEN_SHORT[rankWhen] + (combo ? ' · 💨 rüzgarlı puan' : '');
   $('.map-bar').classList.toggle('offline', offline);
   $('#rank-refresh').title = `Yenile · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}${offline ? ' (çevrimdışı)' : ''}`;
   renderDots();
+  if (!$('#here-card').hidden && state.hereA) toggleHereCard(true);
   // Önceki seçili kart duruyorsa ona dön, yoksa ilk kart
   const keep = selKey && box.querySelector(`.rank-item[data-key="${CSS.escape(selKey)}"]`);
   selectCard(keep ? selKey : ok[0]?.a.place.key, { scroll: true, pan: false, instant: true });
@@ -835,6 +822,61 @@ function onCarouselScroll() {
   if (best) selectCard(best.c.dataset.key);
 }
 
+function spotCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
+  const { a, r } = x;
+  const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
+  return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(r)}
+    <span class="rank-top">
+      <span class="rank-no">${no}</span>
+      ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
+    </span>
+    <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
+    <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
+    ${miniWx(a, r.date)}
+    <span class="rank-meta">🐟 ${esc(sp)}</span>
+    ${catchLine(a.place)}
+  </button>`;
+}
+
+// Seçili zamana göre bir yerin kart verisi (sıralamadaki hesapla aynı)
+function cardData(a) {
+  if (rankWhen === 'trip') {
+    const { start, end } = tripWindow();
+    const t = tripSummary(a, start, end);
+    if (!t) return null;
+    const L = t.list;
+    return { a, trip: t, r: { ...t.best, score: t.avg, danger: t.danger, reasons: t.best.reasons },
+      show: L.reduce((b, r) => (modeVal(r) > modeVal(b) ? r : b)), v: Math.round(L.reduce((s2, r) => s2 + modeVal(r), 0) / L.length * 10) / 10 };
+  }
+  const r = targetRow(a);
+  return r ? { a, r, show: r, v: modeVal(r) } : null;
+}
+
+// —— Bulunduğum yer kartı (🎣 düğmesi: aç / kapat) ——
+let hereSeq = 0;
+async function toggleHereCard(refresh = false) {
+  const box = $('#here-card');
+  if (!refresh && !box.hidden) { box.hidden = true; hereSeq++; $('#map-here').classList.remove('on'); return; }
+  const seq = ++hereSeq;
+  box.hidden = false; $('#map-here').classList.add('on');
+  if (!refresh) box.innerHTML = '<div class="rank-item empty">📍 Konumun bulunuyor…</div>';
+  const p = refresh && state.hereA ? state.hereA.place : await locateMe();
+  if (seq !== hereSeq) return;
+  if (!p) { box.hidden = true; $('#map-here').classList.remove('on'); return; }
+  try {
+    const nm = refresh ? null : await Promise.race([placeName(p.lat, p.lng), new Promise(r => setTimeout(() => r(null), 2500))]);
+    const place = refresh ? state.hereA.place : { lat: p.lat, lng: p.lng, key: 'here', water: 'auto', name: nm?.name || 'Bulunduğun yer' };
+    const a = await analyze(place, {});
+    if (seq !== hereSeq) return;
+    state.hereA = a;
+    const x = cardData(a);
+    box.innerHTML = '<button class="here-close" aria-label="Kapat">✕</button>' +
+      (x ? (x.trip ? tripCard(x, 0, 1, '📍') : spotCard(x, 0, 1, '📍')) : '<div class="rank-item empty">Bu zaman için tahmin yok.</div>');
+  } catch (e) {
+    if (seq === hereSeq) box.innerHTML = `<button class="here-close" aria-label="Kapat">✕</button><div class="rank-item empty">${esc(e.message)}</div>`;
+  }
+}
+
 function catchLine(place) {
   const list = catchesAt(place);
   if (!list.length) return '';
@@ -842,14 +884,14 @@ function catchLine(place) {
   return `<span class="rank-meta catch-line">📒 Bu merada ${sm.n} balık${sm.species ? ` · en çok ${esc(sm.species)}` : ''}${sm.bait ? ` · ${esc(sm.bait)}` : ''}</span>`;
 }
 
-function tripCard(x, i, total) {
+function tripCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
   const { a, trip: t } = x;
   const b = x.show;
   const val = modeVal;
   const sp = speciesScores(b, a.type).slice(0, 3).map(s => s.name).join(', ');
   return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge({ ...b, windScore: t.avgWind })}
     <span class="rank-top">
-      <span class="rank-no">${i + 1}<small>/${total}</small></span>
+      <span class="rank-no">${no}</span>
       ${scorePill({ score: x.v })}<span class="rank-lbl">ortalama</span>
     </span>
     <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
@@ -1533,6 +1575,11 @@ function bindEvents() {
   $('#spot-cancel').addEventListener('click', () => $('#spot-dialog').close());
   $('#spot-delete').addEventListener('click', deleteSpot);
   $('#map-locate').addEventListener('click', locateMe);
+  $('#map-here').addEventListener('click', () => toggleHereCard());
+  $('#here-card').addEventListener('click', e => {
+    if (e.target.closest('.here-close')) { toggleHereCard(); return; }
+    if (e.target.closest('.rank-item[data-key]') && state.hereA) openDetail(state.hereA.place, rankWhen === 'trip');
+  });
   $('#map-search').addEventListener('submit', onMapSearch);
   $('#map-q').addEventListener('input', onMapTyping);
   $('#map-results').addEventListener('click', e => {
