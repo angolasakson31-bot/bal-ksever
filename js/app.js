@@ -118,7 +118,6 @@ function showTab(name) {
   if (name === 'map') { initMap(); renderRank(); }
   if (name === 'stats') renderStats();
   if (name === 'more') renderMore();
-  try { localStorage.setItem('tab', name); } catch { /* yok */ }
   window.scrollTo(0, 0);
 }
 
@@ -1685,10 +1684,7 @@ async function init() {
   setupInstallHint();
   await loadData();
   refreshAll();
-  let start = 'catches';
-  try { start = localStorage.getItem('tab') || 'catches'; } catch { /* yok */ }
-  if (start === 'weather') start = 'map';
-  showTab(document.getElementById(`tab-${start}`) ? start : 'catches');
+  showTab('map'); // uygulama her açılışta haritayla başlar
   db.requestPersistence();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
