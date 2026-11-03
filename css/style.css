@@ -480,3 +480,4 @@ body.map-mode main { padding: 0; max-width: none; }
   border-radius: 99px; padding: 8px 12px; font: inherit; font-size: .85rem; white-space: nowrap; cursor: pointer;
 }
 .dtabs button.active { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); font-weight: 600; }
+.shore-line { font-size: .85rem; color: var(--text-2); margin: 10px 0 0; line-height: 1.5; }

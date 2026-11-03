@@ -189,3 +189,42 @@ export function weatherWord(code) {
   if (code >= 1) return 'Parçalı';
   return 'Açık';
 }
+
+// ——— Suya bakış yönü (yükselti verisinden otomatik) ———
+// Meranın çevresinde 150/300/600 m uzaklıkta 16 yöne bakılır; su seviyesindeki (en düşük, düz)
+// noktalar 'su' sayılır. Su noktalarının ortalama yönü = suya bakış yönü (0=K, 90=D).
+// Her yanı su (iskele/mendirek ucu) ya da hiç su yoksa null döner.
+const ELEV = 'https://api.open-meteo.com/v1/elevation';
+const shoreCache = new Map();
+export async function detectShore(lat, lng) {
+  const k = key(lat, lng);
+  if (shoreCache.has(k)) return shoreCache.get(k);
+  const pts = [[lat, lng]];
+  const dirs = 16, radii = [150, 300, 600];
+  for (const rm of radii) for (let d = 0; d < dirs; d++) {
+    const a = d * 2 * Math.PI / dirs;
+    const dLat = (rm * Math.cos(a)) / 111320, dLng = (rm * Math.sin(a)) / (111320 * Math.cos(lat * Math.PI / 180));
+    pts.push([lat + dLat, lng + dLng]);
+  }
+  try {
+    const url = `${ELEV}?latitude=${pts.map(p => p[0].toFixed(5)).join(',')}&longitude=${pts.map(p => p[1].toFixed(5)).join(',')}`;
+    const j = await getJson(url);
+    const el = j.elevation;
+    if (!Array.isArray(el) || el.length !== pts.length) throw new Error();
+    const lvl = Math.min(...el);
+    let x = 0, y = 0, waterDirs = 0;
+    for (let d = 0; d < dirs; d++) {
+      let wet = 0;
+      radii.forEach((_, ri) => { if (el[1 + ri * dirs + d] <= lvl + 1) wet++; });
+      if (wet) { waterDirs++; const a = d * 2 * Math.PI / dirs; x += wet * Math.sin(a); y += wet * Math.cos(a); }
+    }
+    const land = el.filter(v => v > lvl + 2).length;
+    let res = null;
+    if (waterDirs > 0 && waterDirs <= 13 && land >= 6 && Math.hypot(x, y) > 0.5) {
+      res = { bearing: Math.round(((Math.atan2(x, y) * 180 / Math.PI) + 360) % 360), auto: true };
+    } else if (waterDirs > 13) res = { bearing: null, open: true, auto: true };
+    else res = { bearing: null, none: true, auto: true };
+    shoreCache.set(k, res);
+    return res;
+  } catch { return null; }
+}

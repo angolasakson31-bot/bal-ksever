@@ -37,6 +37,8 @@ Puan 0–10 arasıdır. Ağırlıklar kanıtın gücüne göre verildi:
 
 **Solunar:** bilimsel çalışmalar solunar tablolarla av oranı arasında ilişki bulamadığı için ağırlığı +0,2 / +0,1'e düşürüldü.
 
+**🧭 Kıyı yönü:** her meranın suya bakış yönü Open-Meteo yükselti verisinden (150/300/600 m, 16 yön) otomatik bulunur ve kaydedilir; mera düzenleme ekranından elle değiştirilebilir. Rüzgar sudan kıyıya esiyorsa +0,6, kıyıya çok sert vuruyorsa −0,5, karadan (arkadan) esiyorsa −0,4 (Balık + rüzgar puanı ve rüzgar puanında).
+
 **💨 Rüzgar puanı:** rüzgar hızı, hamle, denizde dalga; Boğaz/Marmara'da sert lodos ve uzun lodosta akıntı uyarısı; göl/derede soğuk mevsimde soğuk kuzey rüzgarı (−) ve ılık güney rüzgarı (+); 24 saat aynı yönden esen rüzgar (yem rüzgarın vurduğu kıyıda birikir).
 
 Veriler Open-Meteo'dan `best_match` ile çekilir: konuma göre en iyi hava modelleri (ECMWF, DWD ICON, Météo-France vb.) otomatik birleştirilir. Uygulama açıldığında, uygulamaya geri dönüldüğünde ve 10 dakikada bir yenilenir; ayrıntı ekranında elle yenileme düğmesi vardır.

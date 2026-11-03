@@ -1,7 +1,7 @@
 import * as db from './db.js';
 import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
-import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL } from './weather.js';
-import { scoreHours, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
+import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore } from './weather.js';
+import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
 
@@ -478,6 +478,7 @@ function openSpotDialog(s, latlng, water, name = '') {
   $('#spot-name').value = s?.name || name;
   $('#spot-type').value = s?.type || 'İskele';
   $('#spot-water').value = s?.water || water || 'auto';
+  $('#spot-shore').value = s?.shoreManual ?? 'auto';
   $('#spot-notes').value = s?.notes || '';
   $('#spot-coords').textContent = `📍 ${editingSpot.lat.toFixed(5)}, ${editingSpot.lng.toFixed(5)}`;
   $('#spot-delete').hidden = !s;
@@ -488,7 +489,7 @@ async function saveSpot(e) {
   e.preventDefault();
   const rec = { ...editingSpot, id: editingSpot.id || db.newId(), name: $('#spot-name').value.trim(),
     lat: Number(editingSpot.lat), lng: Number(editingSpot.lng),
-    type: $('#spot-type').value, water: $('#spot-water').value, notes: $('#spot-notes').value.trim(), createdAt: editingSpot.createdAt || new Date().toISOString() };
+    type: $('#spot-type').value, water: $('#spot-water').value, shoreManual: $('#spot-shore').value, notes: $('#spot-notes').value.trim(), createdAt: editingSpot.createdAt || new Date().toISOString() };
   if (!rec.name) return;
   await db.put('spots', rec);
   $('#spot-dialog').close();
@@ -511,10 +512,27 @@ const hh = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes(
 const dayShort = d => d.toLocaleDateString('tr-TR', { weekday: 'short' });
 const effectiveType = (place, cond) => place.water && place.water !== 'auto' ? place.water : (cond.seaDetected ? 'sea' : 'lake');
 
+// Suya bakış yönü: elle seçildiyse o, yoksa kayıtlı otomatik sonuç, o da yoksa yükseltiden bul ve kaydet
+const DIR8 = ['Kuzey', 'Kuzeydoğu', 'Doğu', 'Güneydoğu', 'Güney', 'Güneybatı', 'Batı', 'Kuzeybatı'];
+const dirName8 = deg => DIR8[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+async function shoreFor(place) {
+  if (place.shoreManual === 'none') return { bearing: null, manual: true };
+  if (place.shoreManual != null && place.shoreManual !== 'auto') return { bearing: +place.shoreManual, manual: true };
+  if (place.shore && 'bearing' in place.shore) return place.shore;
+  const res = await detectShore(place.lat, place.lng);
+  const sp = spotById(place.key) || spotById(place.id);
+  if (sp && res) { sp.shore = res; db.put('spots', { ...sp }).catch(() => {}); }
+  return res;
+}
+
 async function analyze(place, opts) {
-  const cond = await getConditions(place.lat, place.lng, { ...opts, wantSea: place.water === 'sea' });
+  const [cond, shoreInfo] = await Promise.all([
+    getConditions(place.lat, place.lng, { ...opts, wantSea: place.water === 'sea' }),
+    shoreFor(place).catch(() => null),
+  ]);
   const type = effectiveType(place, cond);
-  return { place, cond, type, rows: scoreHours(cond, type, place.lat, place.lng) };
+  const shore = shoreInfo?.bearing ?? null;
+  return { place, cond, type, shore, shoreInfo, rows: scoreHours(cond, type, place.lat, place.lng, shore) };
 }
 
 function summaryLine(r, type) {
@@ -931,12 +949,15 @@ function renderDetail() {
     </div>
 
 `,
-    detail: () => `<div class="card"><h3>Su tipi</h3><div class="filter-row">
+    detail: () => `<div class="card"><h3>Su tipi ve kıyı yönü</h3><div class="filter-row">
       <select id="wx-water">
         <option value="auto">Su tipi: otomatik (${WATER_TYPES[cond.seaDetected ? 'sea' : 'lake'].label})</option>
         ${Object.entries(WATER_TYPES).map(([k, v]) => `<option value="${k}" ${place.water === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
       </select>
-    </div></div>
+    </div>
+      <p class="shore-line">🧭 Suya bakış yönü: <b>${a.shoreInfo?.bearing != null ? dirName8(a.shoreInfo.bearing) : a.shoreInfo?.open ? 'her yanı su' : 'bulunamadı'}</b>${a.shoreInfo?.manual ? ' (elle seçildi)' : a.shoreInfo ? ' (otomatik)' : ''}
+        ${a.shore != null && sel.windDir != null ? `<br>💨 Rüzgar şu an: <b>${{ onshore: 'sudan kıyınıza doğru', offshore: 'arkanızdan, karadan suya', cross: 'yandan' }[windRelation(sel.windDir, a.shore)]}</b> (${esc(windName(sel.windDir, true))})` : ''}
+        <br><small>Yanlışsa meraya basılı tutup "Tüm bilgileri düzenle"den değiştirebilirsiniz.</small></p></div>
     <div class="card"><h3>🌤️ Ayrıntılı hava (${hh(sel.date)})</h3><div class="metrics">
       ${metric('Rüzgar', `${arrow(sel.windDir)} ${fmt(sel.wind)} km/s`, `${windName(sel.windDir)} · hamle ${fmt(sel.gust)}`)}
       ${metric('Hava', `${fmt(sel.temp)} °C`, `hissedilen ${fmt(sel.feels)} °C`)}

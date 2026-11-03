@@ -72,12 +72,12 @@ function freshWaterTemp(hours, i, type) {
 }
 
 // ——— Ana fonksiyon: her saate skor ekler ———
-export function scoreHours(cond, type, lat, lng) {
-  return cond.hours.map((r, i) => scoreRow(r, i, cond.hours, cond.suns, type, lat, lng, 60));
+export function scoreHours(cond, type, lat, lng, shore = null) {
+  return cond.hours.map((r, i) => scoreRow(r, i, cond.hours, cond.suns, type, lat, lng, 60, shore));
 }
 
 // Tek bir zaman dilimini puanla. i: geçmişe bakış için saatlik dizideki konum, spanMin: dilim uzunluğu (dk)
-export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60) {
+export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore = null) {
   {
     const mid = spanMin / 2;
     const reasons = [];
@@ -174,7 +174,7 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60) {
     if (Math.min(Math.abs(moon.age - 14.77), moon.age, 29.53 - moon.age) < 2) add(0.3, moon.name);
 
     const score = Math.round(Math.max(0, Math.min(10, s)) * 10) / 10;
-    const w = windScore(r, i, hours, type, lat, lng);
+    const w = windScore(r, i, hours, type, lat, lng, shore);
     // Birleşik puan: balık puanı + sadece rüzgar yönü/bölge etkisi
     const comboScore = Math.round(Math.max(0, Math.min(10, s + w.dir)) * 10) / 10;
     return { ...r, score, comboScore, dirNotes: w.dirNotes, windScore: w.score, windNotes: w.notes, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
@@ -195,7 +195,14 @@ const inBosphorus = (lat, lng) => lat >= 40.99 && lat <= 41.22 && lng >= 28.97 &
 // Marmara Denizi kıyıları (Silivri 41.07 dahil; İstanbul'un Karadeniz kıyısı 41.15+ hariç) + Boğaz
 const inMarmara = (lat, lng) => (lat >= 40.2 && lat <= 41.1 && lng >= 26.4 && lng <= 29.95) || inBosphorus(lat, lng);
 
-export function windScore(r, i, hours, type, lat, lng) {
+// Rüzgarın kıyıya göre durumu. shore: suya bakış yönü (derece, 0=K); rüzgar yönü = rüzgarın geldiği yön.
+export function windRelation(windDir, shore) {
+  if (windDir == null || shore == null) return null;
+  const diff = Math.abs(((windDir - shore + 540) % 360) - 180);
+  return diff <= 60 ? 'onshore' : diff >= 120 ? 'offshore' : 'cross';
+}
+
+export function windScore(r, i, hours, type, lat, lng, shore = null) {
   const notes = [];
   if (r.wind == null) return { score: null, notes, dir: 0, dirNotes: [] };
   let s;
@@ -226,7 +233,12 @@ export function windScore(r, i, hours, type, lat, lng) {
     if (isNorthCold(r.windDir)) { s -= 1; dir -= 1; notes.push('Soğuk kuzey rüzgarı suyu soğutur'); dirNotes.push([-1, 'Soğuk kuzey rüzgarı suyu soğutur']); }
     else if (isSouthWarm(r.windDir)) { s += 0.7; dir += 0.7; notes.push('Ilık güney rüzgarı suyu ısıtır'); dirNotes.push([0.7, 'Ilık güney rüzgarı suyu ısıtır']); }
   }
-  if (type !== 'sea' && w >= 8) {
+  const rel = windRelation(r.windDir, shore);
+  const addDir = (v, t) => { s += v; dir += v; notes.push(t); dirNotes.push([v, t]); };
+  if (rel === 'onshore' && w >= 8 && w < 30) addDir(0.6, 'Rüzgar sudan kıyınıza esiyor: yem ve balık kıyıya gelir');
+  else if (rel === 'onshore' && w >= 30) addDir(type === 'sea' ? -0.5 : -0.3, 'Sert rüzgar tam kıyınıza vuruyor: dalga ve köpük, dikkat');
+  else if (rel === 'offshore' && w >= 8) addDir(-0.4, 'Rüzgar arkanızdan (karadan) esiyor: yem açığa gider, kıyı suyu durgun');
+  if (type !== 'sea' && w >= 8 && (rel === 'onshore' || rel == null)) {
     const last = hours.slice(Math.max(0, i - 24), i + 1).filter(h => h.windDir != null);
     const sameDir = last.length >= 20 && last.every(h => Math.abs(((h.windDir - r.windDir + 540) % 360) - 180) <= 45);
     if (sameDir) { s += 0.3; dir += 0.3; notes.push('24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir'); dirNotes.push([0.3, '24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir']); }
