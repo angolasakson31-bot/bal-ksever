@@ -405,3 +405,15 @@ dialog.sheet { margin: auto auto 0; width: 100vw; max-width: 560px; border-radiu
 .mode-row { margin-bottom: 4px; }
 .mode-row .seg-mini button { padding: 8px 14px; font-size: .88rem; }
 .mode-help { margin: 4px 0 10px; font-size: .8rem; line-height: 1.4; }
+
+/* Kart içi 6 saatlik mini hava */
+.mini-wx { display: flex; gap: 3px; margin: 6px 0 4px; }
+.mini-wx .mc {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  background: var(--surface-2); border-radius: 8px; padding: 4px 0; font-size: .66rem; line-height: 1.2;
+}
+.mini-wx .mt { color: var(--text-2); font-weight: 600; }
+.mini-wx .mi { font-size: 1.05rem; }
+.mini-wx .mtp { font-weight: 700; font-size: .75rem; }
+.mini-wx .mw { color: var(--text-2); white-space: nowrap; }
+.mini-wx .mr { color: var(--text-2); }
