@@ -299,15 +299,23 @@ button.hour.now { border-color: var(--primary); }
 .chips button.active { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
 .rank-head { margin: 0 0 2px; }
 .mk-wrap { background: none; border: 0; }
-.mk { position: relative; width: 30px; height: 30px; }
+.mk { position: relative; width: 42px; height: 42px; }
 .mk-dot {
-  display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%;
-  color: var(--pill-ink); font-weight: 700; font-size: 14px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 50%;
+  color: var(--pill-ink); font-weight: 800; font-size: 15px; letter-spacing: -.3px;
+  border: 2.5px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.45);
+}
+.mk-rank {
+  position: absolute; top: -6px; left: -6px; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; background: #13222c; color: #fff;
+  font-size: 11px; font-weight: 800; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4);
 }
 .mk-name {
-  position: absolute; left: 32px; top: 5px; white-space: nowrap; background: rgba(255,255,255,.92); color: #13222c;
+  position: absolute; left: 46px; top: 11px; white-space: nowrap; background: rgba(255,255,255,.92); color: #13222c;
   font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.3);
 }
+/* Uzaktan bakarken isimleri gizle, sadece puan yuvarlakları kalsın */
+.map-far .mk-name { display: none; }
 
 /* Detay: grafik, tür, öneri */
 .card h4 { margin: 14px 0 4px; font-size: .85rem; color: var(--text-2); font-weight: 600; }
