@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
-import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore } from './weather.js';
+import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater } from './weather.js';
 import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
@@ -33,13 +33,24 @@ function dropPhotoUrl(id) {
   if (u) { URL.revokeObjectURL(u); state.photoUrls.delete(id); }
 }
 
-function getPosition() {
+// Konum: birkaç saniye GPS'i dinleyip en hassas ölçümü al (ilk ölçüm çoğu zaman baz istasyonu/Wi-Fi'dan, kaba gelir)
+function getPosition({ wantAcc = 25, maxWait = 8000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('Konum desteklenmiyor'));
-    navigator.geolocation.getCurrentPosition(
-      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => reject(new Error('Konum alınamadı. Tarayıcı ayarlarından konum iznini açın.')),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+    let best = null, id = null, done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      if (id != null) navigator.geolocation.clearWatch(id);
+      clearTimeout(timer);
+      best ? resolve(best) : reject(new Error('Konum alınamadı. Tarayıcı ayarlarından konum iznini ve telefonun GPS\'ini açın.'));
+    };
+    const timer = setTimeout(finish, maxWait);
+    id = navigator.geolocation.watchPosition(p => {
+      const cur = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) };
+      if (!best || cur.acc <= best.acc) best = cur;
+      if (best.acc <= wantAcc) finish();
+    }, err => { if (err.code === 1) finish(); }, // izin yoksa hemen bitir; diğer hatalarda süre dolana kadar bekle
+    { enableHighAccuracy: true, timeout: maxWait, maximumAge: 0 });
   });
 }
 
@@ -307,7 +318,7 @@ async function deleteCatch() {
 }
 
 // ————————————————— Harita —————————————————
-let map, spotLayer, catchLayer, meMarker, mapFitted = false;
+let map, spotLayer, catchLayer, meMarker, meAcc, mapFitted = false;
 const rankInfo = new Map(); // mera id -> { rank, score, danger }
 
 function initMap() {
@@ -424,10 +435,14 @@ async function locateMe() {
   try { p = await getPosition(); } catch (e) { toast(e.message); return null; }
   initMap();
   if (map) { // harita yüklenemese de konum kullanılabilsin
-    map.setView([p.lat, p.lng], 15);
+    map.setView([p.lat, p.lng], p.acc && p.acc > 150 ? 14 : 16);
     if (meMarker) meMarker.setLatLng([p.lat, p.lng]);
     else meMarker = L.circleMarker([p.lat, p.lng], { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
+    // Hassasiyet dairesi: gerçek konum bu dairenin içinde
+    if (meAcc) map.removeLayer(meAcc);
+    if (p.acc) meAcc = L.circle([p.lat, p.lng], { radius: p.acc, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.1, interactive: false }).addTo(map);
   }
+  if (p.acc > 100) toast(`📍 Konum hassasiyeti düşük (±${p.acc} m). Telefonun GPS'i açık mı? Açık alanda tekrar deneyin.`, 5000);
   return p;
 }
 
@@ -615,7 +630,7 @@ async function deleteSpot() {
 const fmt = (v, d = 0) => v == null || Number.isNaN(v) ? '—' : Number(v).toFixed(d);
 const hh = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 const dayShort = d => d.toLocaleDateString('tr-TR', { weekday: 'short' });
-const effectiveType = (place, cond) => place.water && place.water !== 'auto' ? place.water : (cond.seaDetected ? 'sea' : 'lake');
+const effectiveType = (place, cond, guess) => place.water && place.water !== 'auto' ? place.water : (guess?.type || (cond.seaDetected ? 'sea' : 'lake'));
 
 // Suya bakış yönü: elle seçildiyse o, yoksa kayıtlı otomatik sonuç, o da yoksa yükseltiden bul ve kaydet
 const DIR8 = ['Kuzey', 'Kuzeydoğu', 'Doğu', 'Güneydoğu', 'Güney', 'Güneybatı', 'Batı', 'Kuzeybatı'];
@@ -630,14 +645,25 @@ async function shoreFor(place) {
   return res;
 }
 
+let waterT = null;
+function waterFound() { clearTimeout(waterT); waterT = setTimeout(() => { if (state.tab === 'map') renderRank(); }, 1500); }
 async function analyze(place, opts) {
+  // Su tipi "otomatik" ise önce haritadaki suya bak (körfez/göl/dere); deniz çıkarsa kıyıdan en yakın deniz verisi alınır
+  const auto = !place.water || place.water === 'auto';
+  // Bulunmuşsa hemen kullan; bulunmamışsa arka planda bul, bitince sıralamayı yenile (liste beklemesin)
+  let guess = auto ? cachedWater(place.lat, place.lng) : null;
+  if (auto && !guess) {
+    if (opts?.waitWater) guess = await detectWater(place.lat, place.lng).catch(() => null);
+    else detectWater(place.lat, place.lng).then(g => { if (g) waterFound(); }).catch(() => {});
+  }
+  const wantSea = place.water === 'sea' || guess?.type === 'sea';
   const [cond, shoreInfo] = await Promise.all([
-    getConditions(place.lat, place.lng, { ...opts, wantSea: place.water === 'sea' }),
+    getConditions(place.lat, place.lng, { ...opts, wantSea }),
     shoreFor(place).catch(() => null),
   ]);
-  const type = effectiveType(place, cond);
+  const type = effectiveType(place, cond, guess);
   const shore = shoreInfo?.bearing ?? null;
-  return { place, cond, type, shore, shoreInfo, rows: scoreHours(cond, type, place.lat, place.lng, shore) };
+  return { place, cond, type, guess, shore, shoreInfo, rows: scoreHours(cond, type, place.lat, place.lng, shore) };
 }
 
 function summaryLine(r, type) {
@@ -737,7 +763,7 @@ async function renderRank(force = false) {
   const box = $('#rank-list');
   const places = state.spots.filter(s => Number.isFinite(s.lat)).map(s => ({ ...s, key: s.id }));
   if ($('#rank-me').checked) {
-    try { const p = await getPosition(); places.unshift({ ...p, name: '📍 Konumum', key: 'me', water: 'auto' }); }
+    try { const p = await getPosition({ wantAcc: 100, maxWait: 4000 }); places.unshift({ ...p, name: '📍 Konumum', key: 'me', water: 'auto' }); }
     catch (e) { toast(e.message); }
   }
   if (!places.length) {
@@ -857,24 +883,25 @@ function cardData(a) {
 
 // —— Bulunduğum yer kartı (🎣 düğmesi: aç / kapat) ——
 let hereSeq = 0;
+const hereNo = a => `📍${a.place.acc ? `<small> ±${a.place.acc} m</small>` : ''}`;
 async function toggleHereCard(refresh = false) {
   const box = $('#here-card');
   if (!refresh && !box.hidden) { box.hidden = true; hereSeq++; $('#map-here').classList.remove('on'); return; }
   const seq = ++hereSeq;
   box.hidden = false; $('#map-here').classList.add('on');
-  if (!refresh) box.innerHTML = '<div class="rank-item empty">📍 Konumun bulunuyor…</div>';
+  if (!refresh) box.innerHTML = '<div class="rank-item empty">📍 Konumun bulunuyor… <small>(GPS en hassas konumu arıyor, birkaç saniye)</small></div>';
   const p = refresh && state.hereA ? state.hereA.place : await locateMe();
   if (seq !== hereSeq) return;
   if (!p) { box.hidden = true; $('#map-here').classList.remove('on'); return; }
   try {
     const nm = refresh ? null : await Promise.race([placeName(p.lat, p.lng), new Promise(r => setTimeout(() => r(null), 2500))]);
-    const place = refresh ? state.hereA.place : { lat: p.lat, lng: p.lng, key: 'here', water: 'auto', name: nm?.name || 'Bulunduğun yer' };
-    const a = await analyze(place, {});
+    const place = refresh ? state.hereA.place : { lat: p.lat, lng: p.lng, acc: p.acc, key: 'here', water: 'auto', name: nm?.name || 'Bulunduğun yer' };
+    const a = await analyze(place, { waitWater: true });
     if (seq !== hereSeq) return;
     state.hereA = a;
     const x = cardData(a);
     box.innerHTML = '<button class="here-close" aria-label="Kapat">✕</button>' +
-      (x ? (x.trip ? tripCard(x, 0, 1, '📍') : spotCard(x, 0, 1, '📍')) : '<div class="rank-item empty">Bu zaman için tahmin yok.</div>');
+      (x ? (x.trip ? tripCard(x, 0, 1, hereNo(a)) : spotCard(x, 0, 1, hereNo(a))) : '<div class="rank-item empty">Bu zaman için tahmin yok.</div>');
   } catch (e) {
     if (seq === hereSeq) box.innerHTML = `<button class="here-close" aria-label="Kapat">✕</button><div class="rank-item empty">${esc(e.message)}</div>`;
   }
@@ -1030,7 +1057,7 @@ async function openDetail(place, fromTrip = false) {
   $('#wx-body').innerHTML = '<div class="empty">Yükleniyor… 🌊</div>';
   if (!dlg.open) dlg.showModal();
   try {
-    const a = await analyze(place);
+    const a = await analyze(place, { waitWater: true });
     const now = rowAt(a, new Date()) || hourAt(a.rows, new Date()) || a.rows[0];
     const tw = rankWhen === 'trip' && isTripOpen ? tripWindow() : null;
     const best = tw ? tripSummary(a, tw.start, tw.end)?.best : null;
@@ -1174,7 +1201,7 @@ function renderDetail() {
 `,
     detail: () => `<div class="card"><h3>Su tipi ve kıyı yönü</h3><div class="filter-row">
       <select id="wx-water">
-        <option value="auto">Su tipi: otomatik (${WATER_TYPES[cond.seaDetected ? 'sea' : 'lake'].label})</option>
+        <option value="auto">Su tipi: otomatik (${WATER_TYPES[effectiveType({ water: 'auto' }, cond, a.guess)].label}${a.guess?.name ? ` · ${esc(a.guess.name)}` : ''})</option>
         ${Object.entries(WATER_TYPES).map(([k, v]) => `<option value="${k}" ${place.water === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
       </select>
     </div>
@@ -1262,7 +1289,7 @@ async function onDetailClick(e) {
   if (e.target.id === 'wx-refresh') {
     const t = detail.sel.date.getTime();
     e.target.textContent = 'Yenileniyor…';
-    try { detail.a = await analyze(detail.a.place, { force: true }); } catch (err) { toast(err.message); }
+    try { detail.a = await analyze(detail.a.place, { force: true, waitWater: true }); } catch (err) { toast(err.message); }
     detail.sel = (detail.sel.slot ? rowAt(detail.a, new Date(t)) : detail.a.rows.find(r => r.date.getTime() === t)) || hourAt(detail.a.rows, new Date()) || detail.a.rows[0];
     renderDetail(); toast('Güncellendi'); return;
   }
@@ -1281,7 +1308,7 @@ async function onDetailWaterChange(e) {
   const spot = spotById(place.key) || spotById(place.id);
   if (spot) { await db.put('spots', { ...spot, water: place.water }); await loadData(); refreshAll(); }
   const t = detail.sel.date.getTime();
-  detail.a = await analyze(place);
+  detail.a = await analyze(place, { waitWater: true });
   detail.sel = (detail.sel.slot ? rowAt(detail.a, new Date(t)) : detail.a.rows.find(r => r.date.getTime() === t)) || detail.a.rows[0];
   renderDetail();
 }
@@ -1290,7 +1317,7 @@ async function onDetailWaterChange(e) {
 async function mapPointPopup(latlng) {
   const pop = L.popup().setLatLng(latlng).setContent('Hesaplanıyor… 🎣').openOn(map);
   try {
-    const [nm, a] = await Promise.all([placeName(latlng.lat, latlng.lng), analyze({ lat: latlng.lat, lng: latlng.lng, name: 'Seçilen nokta', water: 'auto' })]);
+    const [nm, a] = await Promise.all([placeName(latlng.lat, latlng.lng), analyze({ lat: latlng.lat, lng: latlng.lng, name: 'Seçilen nokta', water: 'auto' }, { waitWater: true })]);
     const pname = nm?.name || 'Seçilen nokta';
     a.place.name = pname;
     const r = rowAt(a, new Date()) || hourAt(a.rows, new Date());
