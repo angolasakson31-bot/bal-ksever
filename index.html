@@ -31,7 +31,7 @@
 
   <main>
     <!-- AVLAR -->
-    <section id="tab-catches" class="tab active" data-title="Avlarım">
+    <section id="tab-catches" class="tab" data-title="Avlarım">
       <div class="filter-row">
         <input id="catch-search" type="search" placeholder="Ara: tür, yem, mera…">
       </div>
@@ -39,7 +39,7 @@
     </section>
 
     <!-- HARİTA + MERALARIM: tam ekran harita + alttan açılan panel -->
-    <section id="tab-map" class="tab" data-title="Harita & Meralarım">
+    <section id="tab-map" class="tab active" data-title="Harita & Meralarım">
       <div id="map"></div>
 
       <div class="map-float-top">
@@ -83,8 +83,8 @@
   <button id="fab" class="fab" aria-label="Yeni av ekle">＋</button>
 
   <nav class="bottom-nav">
-    <button data-tab="catches" class="active"><span>🐟</span>Avlar</button>
-    <button data-tab="map"><span>🗺️</span>Harita</button>
+    <button data-tab="map" class="active"><span>🗺️</span>Harita</button>
+    <button data-tab="catches"><span>🐟</span>Avlar</button>
     <button data-tab="stats"><span>📊</span>İstatistik</button>
     <button data-tab="more"><span>📖</span>Rehber</button>
   </nav>
