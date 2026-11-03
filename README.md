@@ -5,10 +5,11 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
 ## v1 özellikleri
 - **Av günlüğü:** fotoğraf, tür, boy, ağırlık, adet, yem, takım, mera, konum, not. Asgari boy uyarısı.
 - **Mera haritası:** meraları haritada işaretleme, avları haritada görme, Google/Apple yol tarifi.
-- **Harita & Meralarım (tek ekran):** üstte harita, altta işaretlenen bütün meraların en iyiden en kötüye sıralaması. Haritadaki işaretlerde sıra numarası ve skor rengi görünür.
+- **Harita & Meralarım (tek ekran):** tam ekran harita; arama kutusu ve 📍/🔍/＋ düğmeleri haritanın üstünde. Meralarım alttan açılan panelde (tutamaca dokun: aç/kapat, sürükle: küçült/büyüt; son durum hatırlanır). Haritadaki işaretlerde sıra numarası ve skor rengi görünür.
   Zaman seçenekleri tam o andan itibaren hesaplanır (15 dk hassasiyet): şimdi, +½/+1/+2/+3/+5/+6/+12 saat, bu akşam, yarın sabah, yarın akşam, 24 saatin en iyisi, 7 gün içinde istenen gün/saat.
   **🚗 Gidip geleceğim:** “kaç saat sonra çıkacaksınız / kaç saat kalacaksınız” seçilir; meralar o aralığın ortalama skoruna göre sıralanır, her merada aralık boyunca skor şeridi ve en iyi an görünür.
-- **Meraya dokun → ayrıntılı tahmin:** öneri metni (ne zaman, hangi tür, hangi yem/takım, rüzgara göre nereye atılır), türlere göre tahmin,
+- **Meraya dokun → ayrıntılı tahmin (sekmeli):** üstte puan ve öneri; altında ⏱️ Saatlik · 🐟 Türler · 📈 Grafikler · 🌤️ Ayrıntı sekmeleri.
+- Ayrıntılı tahmin içeriği: öneri metni (ne zaman, hangi tür, hangi yem/takım, rüzgara göre nereye atılır), türlere göre tahmin,
   grafikler (skor, rüzgar/hamle, dalga/soluğan veya yağış, hava/su sıcaklığı, basınç), ayrıntılı hava (hissedilen, nem, görüş, UV,
   dalga periyodu, akıntı, güneş ve ay doğuş/batış, solunar).
 - **Harita görünümleri (sağ üst düğme):** 🗺️ Detaylı (CARTO Voyager, bol isimli, varsayılan) · 🛰️ Uydu + isimler (Esri) · 🧭 Standart (OpenStreetMap, en güncel) · ⛰️ Topoğrafik (OpenTopoMap) · ⚓ Deniz işaretleri katmanı (OpenSeaMap). Hepsi ücretsiz, anahtarsız; seçim hatırlanır.
