@@ -228,3 +228,55 @@ export async function detectShore(lat, lng) {
     return res;
   } catch { return null; }
 }
+
+// ——— Su tipi tespiti (deniz / göl / nehir) ———
+// 1) OpenStreetMap'te noktanın yakınındaki su: körfez/boğaz/deniz → deniz, göl/baraj/gölet → göl, nehir/dere → nehir.
+// 2) Bulunamazsa deniz modeli: noktada ya da ~2 km içinde dalga verisi varsa deniz, yoksa göl.
+// Sonuç ~100 m'lik kareler için telefonda saklanır (Nominatim'i yormamak için).
+let nomQueue = Promise.resolve();
+const nomThrottle = fn => { const p = nomQueue.then(fn, fn); nomQueue = p.then(() => new Promise(r => setTimeout(r, 1100)), () => new Promise(r => setTimeout(r, 1100))); return p; };
+const SEA_TYPES = new Set(['bay', 'strait', 'sea', 'ocean', 'coastline', 'fjord', 'sound']);
+const LAKE_WATER = new Set(['lake', 'reservoir', 'pond', 'basin', 'lagoon', 'oxbow', 'lock']);
+const RIVER_TYPES = new Set(['river', 'stream', 'canal', 'brook', 'riverbank', 'creek']);
+export function classifyOsm(j) {
+  if (!j || j.error) return null;
+  const cat = j.category || j.class, type = j.type, water = j.extratags?.water;
+  if ((cat === 'place' && (type === 'sea' || type === 'ocean')) || (cat === 'natural' && SEA_TYPES.has(type))) return 'sea';
+  if (cat === 'waterway' && RIVER_TYPES.has(type)) return 'river';
+  if (water === 'river' || water === 'stream' || water === 'canal') return 'river';
+  if (cat === 'natural' && type === 'water') return 'lake'; // OSM'de göller "natural=water" (water=lake/reservoir…)
+  if (LAKE_WATER.has(type) || LAKE_WATER.has(water) || (cat === 'landuse' && type === 'reservoir')) return 'lake';
+  return null;
+}
+// Daha önce bulunduysa hemen döndür (beklemeden)
+export function cachedWater(lat, lng) {
+  try { const c = JSON.parse(localStorage.getItem('wt1:' + key(lat, lng))); return c?.type ? c : null; } catch { return null; }
+}
+const pendingWater = new Map();
+export function detectWater(lat, lng) {
+  const k = key(lat, lng);
+  if (!pendingWater.has(k)) pendingWater.set(k, detectWaterNow(lat, lng).finally(() => pendingWater.delete(k)));
+  return pendingWater.get(k);
+}
+async function detectWaterNow(lat, lng) {
+  const ck = 'wt1:' + key(lat, lng);
+  try { const c = JSON.parse(localStorage.getItem(ck)); if (c?.type) return c; } catch { /* yok */ }
+  let res = null;
+  try {
+    const j = await nomThrottle(() => getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&layer=natural&extratags=1&accept-language=tr`));
+    const t = classifyOsm(j);
+    if (t) res = { type: t, source: 'osm', name: j.name || j.address?.water || '' };
+  } catch { /* ağ yok: deniz modeline bak */ }
+  if (!res) {
+    let m = await fetchMarine(lat, lng);
+    if (!hasWaves(m)) {
+      // Kıyıda durulan nokta karada kalır: ~2 km çevreye bak
+      const d = 0.02;
+      const ring = await Promise.all([...Array(8)].map((_, k) => { const a = k * Math.PI / 4; return fetchMarine(lat + d * Math.cos(a), lng + d * Math.sin(a) / Math.cos(lat * Math.PI / 180)); }));
+      m = ring.find(hasWaves) || null;
+    }
+    res = { type: hasWaves(m) ? 'sea' : 'lake', source: 'marine', name: '' };
+  }
+  try { localStorage.setItem(ck, JSON.stringify(res)); } catch { /* dolu */ }
+  return res;
+}
