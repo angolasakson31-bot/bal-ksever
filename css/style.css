@@ -501,3 +501,12 @@ body.map-mode main { padding: 0; max-width: none; }
 .mini-wx .mc { flex: 0 0 calc((100% - 15px) / 6); scroll-snap-align: start; position: relative; }
 .mini-wx .mc.day { box-shadow: inset 2px 0 0 var(--primary); }
 .mini-wx .mc.day .mt { color: var(--primary); }
+
+/* Av formu: öneri düğmeleri (telefonun açılır listesi yerine) */
+.sugg { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0 2px; scrollbar-width: none; }
+.sugg::-webkit-scrollbar { display: none; }
+.sugg button {
+  flex: none; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  border-radius: 99px; padding: 6px 12px; font: inherit; font-size: .85rem; white-space: nowrap; cursor: pointer;
+}
+.sugg:empty { display: none; }

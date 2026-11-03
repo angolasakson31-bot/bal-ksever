@@ -138,8 +138,8 @@
       </label>
 
       <label>Tür
-        <input id="catch-species" list="species-list" required placeholder="örn. Levrek">
-        <datalist id="species-list"></datalist>
+        <input id="catch-species" required placeholder="Yazın veya aşağıdan seçin" autocomplete="off">
+        <div class="sugg" data-for="catch-species"></div>
       </label>
       <p id="catch-size-warning" class="warn" hidden></p>
 
@@ -154,12 +154,12 @@
       </div>
 
       <label>Yem
-        <input id="catch-bait" list="bait-list" placeholder="örn. Karides">
-        <datalist id="bait-list"></datalist>
+        <input id="catch-bait" placeholder="Yazın veya aşağıdan seçin" autocomplete="off">
+        <div class="sugg" data-for="catch-bait"></div>
       </label>
       <label>Takım / yöntem
-        <input id="catch-method" list="method-list" placeholder="örn. LRF">
-        <datalist id="method-list"></datalist>
+        <input id="catch-method" placeholder="Yazın veya aşağıdan seçin" autocomplete="off">
+        <div class="sugg" data-for="catch-method"></div>
       </label>
 
       <label>Mera
