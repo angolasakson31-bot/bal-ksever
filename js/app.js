@@ -1400,12 +1400,47 @@ async function importBackup(file) {
 let deferredInstall = null;
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-function installSteps() {
+// Tarayıcıyı tanı: hangi menüden ana ekrana eklenir?
+// menu: 'tr' sağ üst ⋮, 'br' sağ alt ☰, 'bc' alt orta, 'share-b' altta Paylaş, 'share-t' üstte Paylaş
+function detectBrowser() {
   const ua = navigator.userAgent;
-  if (isIOS()) return ['Bu sayfayı <b>Safari</b> ile açın (başka tarayıcıda seçenek olmayabilir).', 'Alttaki <b>Paylaş</b> düğmesine dokunun (⬆️ kare içinde ok).', 'Listeyi kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>ye dokunun.'];
-  if (/SamsungBrowser/i.test(ua)) return ['Alttaki menü düğmesine (☰) dokunun.', '<b>“Sayfayı ekle” → “Ana ekran”</b>ı seçin.', '<b>Ekle</b>ye dokunun.'];
-  return ['Tarayıcının sağ üstündeki <b>⋮</b> (üç nokta) menüsüne dokunun.', '<b>“Uygulamayı yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Yükle / Ekle</b>ye dokunun.', 'Bu seçenek yoksa sayfayı <b>Google Chrome</b> ile açıp tekrar deneyin (bazı VPN’li ya da özel tarayıcılar desteklemez).'];
+  const android = /android/i.test(ua);
+  if (isIOS()) {
+    if (/CriOS/i.test(ua)) return { name: 'iPhone · Chrome', menu: 'share-t', steps: ['Adres çubuğunun sağındaki <b>Paylaş ⬆️</b> düğmesine dokunun.', 'Listeyi kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>ye dokunun.', 'Bu seçenek yoksa (iOS 16.4 öncesi) sayfayı <b>Safari</b> ile açın.'] };
+    if (/FxiOS/i.test(ua)) return { name: 'iPhone · Firefox', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>ye dokunun.', '<b>Paylaş</b>ı seçin.', '<b>“Ana Ekrana Ekle”</b>ye dokunun, sonra <b>Ekle</b>.', 'Seçenek yoksa sayfayı <b>Safari</b> ile açın.'] };
+    if (/EdgiOS/i.test(ua)) return { name: 'iPhone · Edge', menu: 'bc', steps: ['Alttaki <b>⋯ menü</b>ye dokunun.', '<b>Paylaş</b>ı seçin.', '<b>“Ana Ekrana Ekle”</b>ye dokunun, sonra <b>Ekle</b>.', 'Seçenek yoksa sayfayı <b>Safari</b> ile açın.'] };
+    return { name: 'iPhone · Safari', menu: 'share-b', steps: ['Alttaki <b>Paylaş</b> düğmesine dokunun (⬆️ kare içinde ok).', 'Listeyi aşağı kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>ye dokunun.'] };
+  }
+  const base = { android };
+  if (/SamsungBrowser/i.test(ua)) return { ...base, name: 'Samsung Internet', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>ye dokunun.', '<b>“Sayfayı ekle”</b> → <b>“Ana ekran”</b>ı seçin.', '<b>Ekle</b>ye dokunun.'] };
+  if (/EdgA/i.test(ua)) return { ...base, name: 'Edge', menu: 'bc', steps: ['Alttaki <b>⋯ menü</b>ye dokunun.', '<b>“Telefona ekle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle / Yükle</b>ye dokunun.'] };
+  if (/OPR|Opera/i.test(ua)) return { ...base, name: 'Opera', menu: 'tr', steps: ['Sağ üstteki <b>⋮ menü</b>ye dokunun.', '<b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
+  if (/YaBrowser/i.test(ua)) return { ...base, name: 'Yandex', menu: 'tr', steps: ['<b>⋮ menü</b>ye dokunun.', '<b>“Ana ekrana kısayol ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
+  if (/MiuiBrowser|XiaoMi/i.test(ua)) return { ...base, name: 'Xiaomi (Mi) Tarayıcı', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>ye dokunun.', '<b>“Kısayol ekle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', 'Telefon izin isterse <b>izin verin</b>.'] };
+  if (/HuaweiBrowser|HuaweiBrowser/i.test(ua)) return { ...base, name: 'Huawei Tarayıcı', menu: 'tr', steps: ['<b>⋮ menü</b>ye dokunun.', '<b>“Kısayol ekle”</b> / <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
+  if (/Firefox/i.test(ua)) return { ...base, name: 'Firefox', menu: 'tr', steps: ['Adres çubuğunun yanındaki <b>⋮ menü</b>ye dokunun.', '<b>“Yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
+  if (/Chrome/i.test(ua) && /Google Inc/.test(navigator.vendor) && !/wv\)/.test(ua)) return { ...base, name: 'Chrome', chrome: true, menu: 'tr', steps: ['Sağ üstteki <b>⋮ menü</b>ye dokunun.', '<b>“Uygulamayı yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Yükle / Ekle</b>ye dokunun.'] };
+  return { ...base, name: android ? 'Bu tarayıcı' : 'Bilgisayar', menu: 'tr', steps: android
+    ? ['Tarayıcı menüsünü (genelde <b>⋮</b> ya da <b>☰</b>) açın.', '<b>“Ana ekrana ekle”</b>, <b>“Kısayol ekle”</b> ya da <b>“Uygulamayı yükle”</b>yi arayın.', 'Bu seçenek yoksa aşağıdaki <b>“Chrome’da aç”</b> düğmesine dokunun; Chrome’da tek dokunuşla eklenir.']
+    : ['Adres çubuğunun sağındaki <b>yükle</b> simgesine (⊕ ya da 🖥️) tıklayın.', 'Yoksa tarayıcı menüsünden <b>“Uygulamayı yükle”</b>yi seçin.'] };
 }
+
+// Menünün yerini gösteren küçük telefon çizimi
+function installFig(menu) {
+  const spots = { tr: [104, 34, '⋮'], br: [104, 186, '☰'], bc: [64, 186, '⋯'], 'share-b': [64, 186, '⬆️'], 'share-t': [96, 34, '⬆️'] };
+  const [x, y, ic] = spots[menu] || spots.tr;
+  return `<svg viewBox="0 0 128 210" class="install-svg" aria-hidden="true">
+    <rect x="4" y="4" width="120" height="202" rx="16" class="ph-body"/>
+    <rect x="12" y="22" width="104" height="24" rx="6" class="ph-bar"/><text x="20" y="38" class="ph-url">🔒 rastgele</text>
+    <rect x="12" y="172" width="104" height="28" rx="6" class="ph-bar"/>
+    <rect x="18" y="58" width="92" height="10" rx="3" class="ph-line"/><rect x="18" y="76" width="70" height="10" rx="3" class="ph-line"/><rect x="18" y="94" width="84" height="10" rx="3" class="ph-line"/>
+    <circle cx="${x}" cy="${y}" r="13" class="ph-hit"/><text x="${x}" y="${y + 5}" class="ph-ic" text-anchor="middle">${ic}</text>
+    <circle cx="${x}" cy="${y}" r="13" class="ph-pulse"/>
+  </svg>`;
+}
+
+const chromeIntent = () => `intent://${location.host}${location.pathname}#Intent;scheme=https;package=com.android.chrome;end`;
+
 async function installApp() {
   if (isStandalone()) { toast('Rastgele zaten ana ekranınızda ✅'); return; }
   if (deferredInstall) {
@@ -1415,7 +1450,13 @@ async function installApp() {
     if (r?.outcome === 'accepted') { toast('Ana ekrana eklendi 🎣'); updateInstallUI(); }
     return;
   }
-  $('#install-steps').innerHTML = installSteps().map(t => `<li>${t}</li>`).join('');
+  const br = detectBrowser();
+  $('#install-browser').textContent = br.name;
+  $('#install-fig').innerHTML = installFig(br.menu);
+  $('#install-steps').innerHTML = br.steps.map(t => `<li>${t}</li>`).join('');
+  const chromeBtn = $('#install-chrome');
+  chromeBtn.hidden = !(br.android && !br.chrome);
+  chromeBtn.href = chromeIntent();
   $('#install-dialog').showModal();
 }
 function installCard() {
@@ -1433,6 +1474,11 @@ function setupInstallHint() {
   window.addEventListener('appinstalled', () => { deferredInstall = null; updateInstallUI(); toast('Ana ekrana eklendi 🎣'); });
   $('#top-install').addEventListener('click', installApp);
   $('#install-dialog-close').addEventListener('click', () => $('#install-dialog').close());
+  $('#install-copy').addEventListener('click', async () => {
+    const url = location.origin + location.pathname;
+    try { await navigator.clipboard.writeText(url); toast('Bağlantı kopyalandı 📋'); }
+    catch { prompt('Bağlantıyı kopyalayın:', url); }
+  });
   updateInstallUI();
   const standalone = isStandalone();
   if (standalone || ls('hideInstall')) return;

@@ -580,3 +580,20 @@ body.map-mode main { padding: 0; max-width: none; }
 .knot-legend .lg.s { background: var(--s1); }
 .knot-legend .lg.t { background: var(--s2); margin-left: 8px; }
 .video-link { display: inline-block; margin: 10px 0 4px; text-decoration: none; }
+
+/* Ana ekrana ekle penceresi */
+.install-wrap { display: flex; gap: 12px; align-items: flex-start; }
+.install-fig { flex: none; width: 108px; }
+.install-svg { width: 100%; height: auto; display: block; }
+.install-svg .ph-body { fill: var(--surface-2); stroke: var(--text-2); stroke-width: 2; }
+.install-svg .ph-bar { fill: var(--surface); }
+.install-svg .ph-line { fill: var(--border); }
+.install-svg .ph-url { fill: var(--muted); font-size: 9px; }
+.install-svg .ph-hit { fill: var(--primary); }
+.install-svg .ph-ic { fill: #fff; font-size: 13px; font-weight: 700; }
+.install-svg .ph-pulse { fill: none; stroke: var(--primary); stroke-width: 3; animation: phpulse 1.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes phpulse { from { transform: scale(1); opacity: .9; } to { transform: scale(2.1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .install-svg .ph-pulse { animation: none; } }
+.install-steps { flex: 1; margin: 0; }
+.install-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.install-actions .btn { width: 100%; text-align: center; text-decoration: none; }

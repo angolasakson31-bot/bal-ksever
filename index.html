@@ -251,9 +251,16 @@
   <!-- Ana ekrana ekleme talimatı -->
   <dialog id="install-dialog">
     <h2>📲 Ana ekrana ekle</h2>
-    <p class="muted">Tarayıcınız tek dokunuşla eklemeyi desteklemiyor. Şu adımları izleyin:</p>
-    <ol id="install-steps" class="install-steps"></ol>
-    <div class="dialog-actions"><span class="spacer"></span><button id="install-dialog-close" class="btn primary">Tamam</button></div>
+    <p class="muted">Tarayıcınız: <b id="install-browser"></b>. Bu tarayıcı siteye kendiliğinden simge ekleme izni vermiyor; ama menüsünden 3 dokunuşla eklenir:</p>
+    <div class="install-wrap">
+      <div id="install-fig" class="install-fig"></div>
+      <ol id="install-steps" class="install-steps"></ol>
+    </div>
+    <div class="install-actions">
+      <a id="install-chrome" class="btn primary" hidden>🌐 Chrome’da aç (tek dokunuşla eklenir)</a>
+      <button id="install-copy" class="btn" type="button">📋 Bağlantıyı kopyala</button>
+      <button id="install-dialog-close" class="btn" type="button">Tamam</button>
+    </div>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
