@@ -1,5 +1,5 @@
 // Çevrimdışı çalışma: uygulama dosyalarını önbelleğe al.
-const VERSION = 'rastgele-v27';
+const VERSION = 'rastgele-v28';
 const CORE = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'js/db.js', 'js/data.js', 'js/weather.js', 'js/fishscore.js', 'js/species-model.js', 'js/timeline.js', 'js/guide.js', 'js/knots.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon-maskable-192.png', 'icons/icon-maskable-512.png',
@@ -45,5 +45,7 @@ self.addEventListener('fetch', e => {
       caches.open(VERSION).then(c => c.put(e.request, copy));
     }
     return res;
-  }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html'))));
+  }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r
+    // Sayfa yedeği yalnız sayfa açılışında; betik/stil yerine sayfa vermek hataya yol açar
+    || (e.request.mode === 'navigate' ? caches.match('index.html') : Response.error()))));
 });
