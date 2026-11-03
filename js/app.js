@@ -315,6 +315,9 @@ function initMap() {
     map.on('contextmenu', addAt);
     map.on('dblclick', addAt);
     map.on('click', e => mapPointPopup(e.latlng));
+    // Uzaklaştırınca isim etiketlerini gizle (üst üste binmesin)
+    const farCheck = () => map.getContainer().classList.toggle('map-far', map.getZoom() < 11);
+    map.on('zoomend', farCheck); farCheck();
   }
   // Harita sekmesi görünür olduktan sonra boyutu düzelt, sonra meraları sığdır
   requestAnimationFrame(() => setTimeout(() => {
@@ -372,10 +375,11 @@ function renderMapMarkers() {
   for (const s of state.spots) {
     if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng)) continue;
     const info = rankInfo.get(s.id);
-    const html = `<div class="mk"><span class="mk-dot" style="background:${info ? scoreColor(info.score) : 'var(--muted)'}">${info ? info.rank : '•'}</span>` +
-      `<span class="mk-name">${esc(s.name)}${info ? ` · ${fmt(info.score, 1)}` : ''}</span></div>`;
+    // Yuvarlakta puan (uzaktan okunur), sol üst köşede sıra numarası
+    const html = `<div class="mk"><span class="mk-dot" style="background:${info ? scoreColor(info.score) : 'var(--muted)'}">${info ? fmt(info.score, 1) : '•'}</span>` +
+      `${info ? `<span class="mk-rank">${info.rank}</span>` : ''}<span class="mk-name">${esc(s.name)}</span></div>`;
     const marker = L.marker([s.lat, s.lng], {
-      icon: L.divIcon({ className: 'mk-wrap', html, iconSize: [30, 30], iconAnchor: [15, 15] }),
+      icon: L.divIcon({ className: 'mk-wrap', html, iconSize: [42, 42], iconAnchor: [21, 21] }),
       zIndexOffset: info ? 1000 - info.rank : 0, title: s.name,
     });
     marker.on('click', () => { if (!justLongPressed(marker.getElement())) openDetail({ ...s, key: s.id }); });
