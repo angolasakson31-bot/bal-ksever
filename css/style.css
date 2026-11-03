@@ -702,3 +702,7 @@ body.wxhint-off .carousel .wx-hint { display: none; }
 .carousel .mini-wx .mtp { font-size: .56rem; }
 .carousel .wx-hint { font-size: .52rem; }
 .carousel .trip-strip i { height: 6px; }
+
+/* Saat saat balık puanı (hava şeridinde) */
+.mini-wx .ms { display: inline-block; min-width: 22px; padding: 0 3px; border-radius: 5px; color: var(--pill-ink); font-weight: 800; font-size: .58rem; line-height: 1.35; font-variant-numeric: tabular-nums; text-align: center; }
+.carousel .mini-wx .ms { font-size: .5rem; min-width: 19px; padding: 0 2px; border-radius: 4px; }
