@@ -457,7 +457,7 @@ const dayShort = d => d.toLocaleDateString('tr-TR', { weekday: 'short' });
 const effectiveType = (place, cond) => place.water && place.water !== 'auto' ? place.water : (cond.seaDetected ? 'sea' : 'lake');
 
 async function analyze(place, opts) {
-  const cond = await getConditions(place.lat, place.lng, opts);
+  const cond = await getConditions(place.lat, place.lng, { ...opts, wantSea: place.water === 'sea' });
   const type = effectiveType(place, cond);
   return { place, cond, type, rows: scoreHours(cond, type, place.lat, place.lng) };
 }
@@ -811,6 +811,10 @@ function renderDetail() {
       </select>
     </div>
     <p class="muted fresh">Son güncelleme ${fmtTime(cond.fetchedAt)} · Open-Meteo (en iyi model otomatik) <button id="wx-refresh" class="btn small">↻ Yenile</button></p>
+    ${cond.marineDist ? `<p class="warn">🌊 Bu noktada deniz modeli boş döndüğü için dalga ve deniz suyu sıcaklığı ~${cond.marineDist} km uzaktaki en yakın deniz noktasından alındı.</p>` : ''}
+    ${type === 'sea' && !cond.seaDetected ? `<p class="warn">🌊 Bu nokta için dalga verisi bulunamadı. Puan dalgasız hesaplandı.</p>` : ''}
+    <details class="res-note"><summary>ℹ️ Veriler ne kadar yerel?</summary>
+      <p>Koordinat tam bu nokta. Güneş, ay ve alacakaranlık saatleri bu noktaya göre hesaplanıyor. Rüzgar, yağmur ve sıcaklık ise hava modelinin yaklaşık 7 km'lik bölge tahmini; sıcaklık yükseltiye göre düzeltiliyor. Dalga ve deniz suyu sıcaklığı yaklaşık 5–8 km'lik bölge tahmini; dar boğaz ve koylarda daha az hassas. Göl ve dere suyu sıcaklığı ölçülmüyor, son 5 günün havasından tahmin ediliyor (~). Yerel sağanakları ve rüzgarı kesen tepe ya da koyları model göremez.</p></details>
     <div class="chips day-chips">${days.map(s => { const di = dayInfo(rows, s.rise); return `<button data-day="${s.rise.toDateString()}" class="${s.rise.toDateString() === detail.day ? 'active' : ''}">
       <span class="dn">${s.rise.toDateString() === new Date().toDateString() ? 'Bugün' : s.rise.toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric' })}</span>
       <span class="di">${di.icon}</span><span class="dt">${fmt(di.max)}° / ${fmt(di.min)}°</span>

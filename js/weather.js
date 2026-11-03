@@ -17,9 +17,37 @@ async function getJson(url) {
 
 const key = (lat, lng) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
 
+const hasWaves = m => !!m?.hourly?.wave_height?.some(v => v != null);
+
+// Deniz verisi: önce best_match + tüm değişkenler, olmazsa daha basit istekler
+async function fetchMarine(lat, lng) {
+  const b = `${MARINE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&forecast_days=7&past_days=2` +
+    '&hourly=wave_height,wave_direction,sea_surface_temperature';
+  const full = `${b},wave_period,swell_wave_height,ocean_current_velocity,ocean_current_direction`;
+  for (const u of [`${full}&models=best_match`, full, b]) {
+    try { return await getJson(u); } catch { /* sıradakini dene */ }
+  }
+  return null;
+}
+
+// Kıyıya çok yakın noktalarda deniz modeli boş dönebilir (dar boğaz, iskele ucu).
+// 'Deniz' olarak işaretlenen merada çevredeki en yakın deniz noktasını ara (~3, 7, 11 km).
+async function nearestSeaMarine(lat, lng) {
+  for (const d of [0.03, 0.06, 0.1]) {
+    const pts = [...Array(8)].map((_, k) => {
+      const a = k * Math.PI / 4;
+      return [lat + d * Math.cos(a), lng + d * Math.sin(a) / Math.cos(lat * Math.PI / 180)];
+    });
+    const res = await Promise.all(pts.map(([la, ln]) => fetchMarine(la, ln)));
+    const i = res.findIndex(hasWaves);
+    if (i >= 0) return { m: res[i], distKm: Math.round(d * 111) };
+  }
+  return null;
+}
+
 // Bir nokta için 5 gün geçmiş + 7 gün tahmin
-export async function getConditions(lat, lng, { force = false } = {}) {
-  const k = key(lat, lng);
+export async function getConditions(lat, lng, { force = false, wantSea = false } = {}) {
+  const k = key(lat, lng) + (wantSea ? ':s' : '');
   const hit = memCache.get(k);
   if (!force && hit && Date.now() - hit.fetchedAt < TTL) return hit;
 
@@ -27,26 +55,29 @@ export async function getConditions(lat, lng, { force = false } = {}) {
   const fUrl = `${FORECAST}?${base}&past_days=5&wind_speed_unit=kmh&models=best_match` +
     '&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,visibility,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,precipitation,precipitation_probability,cloud_cover,weather_code,is_day' +
     '&daily=sunrise,sunset';
-  const mBase = `${MARINE}?${base}&past_days=2&hourly=wave_height,wave_direction,sea_surface_temperature`;
-  const mUrl = `${mBase},wave_period,swell_wave_height,ocean_current_velocity,ocean_current_direction`;
   // 15 dakikalık veri (önümüzdeki 48 saat). Desteklenmezse saatlik veriden ara değer hesaplanır.
   const qUrl = `${FORECAST}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&wind_speed_unit=kmh&models=best_match` +
     '&minutely_15=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,is_day&forecast_minutely_15=192&past_minutely_15=4';
 
   try {
     // Ek deniz değişkenleri bir noktada desteklenmezse temel değişkenlerle tekrar dene
-    const marine = getJson(mUrl).catch(() => getJson(mBase)).catch(() => null);
     const quarter = getJson(qUrl).catch(() => null);
-    const [f, m, q] = await Promise.all([getJson(fUrl), marine, quarter]);
+    let [f, m, q] = await Promise.all([getJson(fUrl), fetchMarine(lat, lng), quarter]);
+    let marineDist = 0;
+    if (wantSea && !hasWaves(m)) {
+      const near = await nearestSeaMarine(lat, lng);
+      if (near) { m = near.m; marineDist = near.distKm; }
+    }
     const cond = normalize(f, m, q);
     cond.fetchedAt = Date.now();
+    cond.marineDist = marineDist;
     memCache.set(k, cond);
-    try { localStorage.setItem('wx2:' + k, JSON.stringify({ f, m, q, fetchedAt: cond.fetchedAt })); } catch { /* dolu */ }
+    try { localStorage.setItem('wx2:' + k, JSON.stringify({ f, m, q, marineDist, fetchedAt: cond.fetchedAt })); } catch { /* dolu */ }
     return cond;
   } catch (err) {
     try {
       const c = JSON.parse(localStorage.getItem('wx2:' + k));
-      if (c) { const cond = normalize(c.f, c.m, c.q); cond.fetchedAt = c.fetchedAt; cond.offline = true; return cond; }
+      if (c) { const cond = normalize(c.f, c.m, c.q); cond.fetchedAt = c.fetchedAt; cond.marineDist = c.marineDist || 0; cond.offline = true; return cond; }
     } catch { /* yok */ }
     throw err;
   }
@@ -94,7 +125,7 @@ function normalize(f, m, q) {
   });
   const suns = f.daily.time.map((d, i) => ({ day: d, rise: localDate(f.daily.sunrise[i]), set: localDate(f.daily.sunset[i]) }));
   // Deniz verisi geliyorsa nokta denizdedir; gelmiyorsa tatlı su (göl/baraj/dere) kabul edilir
-  const seaDetected = !!m?.hourly?.wave_height?.some(v => v != null);
+  const seaDetected = hasWaves(m);
   // 15 dakikalık veriler: zaman damgası (ms) → değerler
   const m15 = new Map();
   const Q = q?.minutely_15;
