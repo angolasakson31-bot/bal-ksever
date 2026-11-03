@@ -471,6 +471,9 @@ function summaryLine(r, type) {
   ].filter(Boolean).join(' · ');
 }
 
+// Köşedeki küçük rüzgar puanı rozeti
+const windBadge = r => r.windScore == null ? '' : `<span class="wind-badge" title="Rüzgar puanı: ${esc((r.windNotes || []).join(' · '))}">` +
+  `${arrow(r.windDir)} 💨 <i class="wdot" style="background:${scoreColor(r.windScore)}"></i><b>${fmt(r.windScore, 1)}</b></span>`;
 const scorePill = r => `<span class="score-pill" style="background:${scoreColor(r.score)}">${fmt(r.score, 1)}</span>`;
 
 // —— Sıralama ——
@@ -551,7 +554,7 @@ async function renderRank(force = false) {
       if (x.trip) return tripCard(x, i);
       const top = r.reasons.slice(0, 3).map(([v, t]) => `${v > 0 ? '＋' : '－'} ${esc(t)}`).join('<br>');
       const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
-      return `<button class="rank-item" data-key="${esc(a.place.key)}">
+      return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(r)}
         <span class="rank-no">${i + 1}</span>
         <span class="rank-score">${scorePill(r)}<small>${scoreShort(r.score, r.danger)}</small></span>
         <span class="rank-body">
@@ -568,7 +571,7 @@ async function renderRank(force = false) {
 function tripCard(x, i) {
   const { a, trip: t } = x;
   const sp = speciesScores(t.best, a.type).slice(0, 3).map(s => s.name).join(', ');
-  return `<button class="rank-item" data-key="${esc(a.place.key)}">
+  return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(t.best)}
     <span class="rank-no">${i + 1}</span>
     <span class="rank-score">${scorePill({ score: t.avg })}<small>ortalama</small></span>
     <span class="rank-body">
@@ -810,11 +813,12 @@ function renderDetail() {
       <p class="chart-note">Mavi sütun: yağmur ihtimali. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
     </div>
 
-    <div class="card score-card">
+    <div class="card score-card">${windBadge(sel)}
       <div class="score-ring" style="border-color:${scoreColor(sel.score)}">${fmt(sel.score, 1)}<small>/ 10</small></div>
       <div class="score-text"><strong>${scoreLabel(sel.score, sel.danger)}</strong>
         <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${hh(sel.date)}${isNow ? ' · şu an' : ''}</div>
         <ul>${sel.reasons.map(([v, t]) => `<li>${v > 0 ? '＋' : '－'} ${esc(t)}</li>`).join('')}</ul>
+        ${sel.windScore != null ? `<p class="wind-line">💨 Rüzgar puanı <b>${fmt(sel.windScore, 1)}</b>: ${esc(windName(sel.windDir, true))} ${fmt(sel.wind)} km/s · ${esc(sel.windNotes.join(' · '))}</p>` : ''}
       </div>
     </div>
 
@@ -923,7 +927,7 @@ async function mapPointPopup(latlng) {
     const r = rowAt(a, new Date()) || hourAt(a.rows, new Date());
     const best = a.rows.filter(x => x.date >= new Date() && x.date <= new Date(Date.now() + 864e5)).reduce((b, x) => (!b || x.score > b.score ? x : b), null);
     pop.setContent(`<div class="pt-pop">${nm ? `<div class="pt-name">📍 <b>${esc(nm.name)}</b>${nm.area ? `<br><small>${esc(nm.area)}</small>` : ''}</div>` : ''}
-      ${scorePill(r)} <b>${esc(scoreLabel(r.score, r.danger))}</b><br>
+      ${scorePill(r)} <b>${esc(scoreLabel(r.score, r.danger))}</b> ${windBadge(r)}<br>
       <small>${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label} · şu an</small><br>
       <small>${esc(summaryLine(r, a.type))}</small><br>
       ${best ? `<small>24 saatin en iyisi: <b>${dayShort(best.date)} ${hh(best.date)}</b> (${fmt(best.score, 1)})</small>` : ''}
