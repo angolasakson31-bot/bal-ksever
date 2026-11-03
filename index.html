@@ -52,7 +52,6 @@
           <button type="button" class="pill-btn" data-open-rank><span id="mode-label">🎣 Balık</span> ▾</button>
           <button type="button" class="pill-btn icon" id="rank-refresh" aria-label="Yenile" title="Yenile">↻</button>
         </div>
-        <div id="map-recent" class="chips recent"></div>
         <div id="map-results" class="map-results" hidden></div>
       </div>
 
@@ -62,10 +61,10 @@
         <button id="map-add-spot" class="round-btn primary" title="Mera ekle" aria-label="Mera ekle">＋</button>
       </div>
 
-      <!-- Yana kayan mera kartları -->
+      <!-- Seçili meranın özeti + sıralama şeridi -->
       <div class="carousel-wrap">
-        <div id="rank-list" class="carousel" aria-label="Meralarım (sağa/sola kaydırın)"></div>
-        <div id="rank-dots" class="dots" aria-hidden="true"></div>
+        <div id="rank-sum" class="rank-sum"></div>
+        <div id="rank-list" class="rank-strip" aria-label="Meralarım: en iyiden kötüye"></div>
       </div>
     </section>
 
@@ -249,8 +248,8 @@
     </div>
     <label class="check"><input type="checkbox" id="rank-me"> Konumumu da listeye ekle</label>
     <details class="help-box"><summary>❓ Nasıl kullanılır?</summary>
-      <p>Kartları sağa/sola kaydırın: harita o meraya gider. Karta dokunun: saat saat hava ve balık tahmini. Karta basılı tutun: adını değiştirin veya silin.</p>
-      <p>Haritada meranın yuvarlağına dokunun: kartı gelir; tekrar dokunun: detay açılır. Boş yere dokunun: o noktanın puanı. Boş yere basılı tutun: yeni mera.</p>
+      <p>Alttaki şeritte meralar en iyiden kötüye sıralıdır. Birine dokunun: harita oraya gider ve özeti görünür. Özete dokunun: saat saat hava ve balık tahmini. Şeritteki meraya basılı tutun: adını değiştirin veya silin.</p>
+      <p>Haritada meranın yuvarlağına dokunun: özeti gelir; tekrar dokunun: detay açılır. Boş yere dokunun: o noktanın puanı. Boş yere basılı tutun: yeni mera.</p>
       <p>Puan 0–10 arası bir tahmindir. Veriler her açılışta Open-Meteo'dan güncel çekilir (7 gün, saatlik).</p>
     </details>
     <button type="button" class="btn primary block" id="rank-dialog-close">Tamam</button>
