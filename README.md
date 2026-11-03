@@ -32,6 +32,8 @@ Puan 0–10 arasıdır. Ağırlıklar kanıtın gücüne göre verildi:
 4. **Yağış:** şimşek ve kuvvetli yağış kötü. Derede son 24 saatte çok yağış varsa su kabarık ve bulanık olur.
 5. **Basınç ve ay (solunar):** bilimsel kanıtı zayıf olduğu için düşük ağırlıkla eklendi.
 
+**💨 Rüzgar puanı (köşedeki küçük rozet, ana puanı değiştirmez):** rüzgar hızı, hamle, denizde dalga; Boğaz/Marmara'da sert lodos ve uzun lodosta akıntı uyarısı; göl/derede soğuk mevsimde soğuk kuzey rüzgarı (−) ve ılık güney rüzgarı (+); 24 saat aynı yönden esen rüzgar (yem rüzgarın vurduğu kıyıda birikir).
+
 Veriler Open-Meteo'dan `best_match` ile çekilir: konuma göre en iyi hava modelleri (ECMWF, DWD ICON, Météo-France vb.) otomatik birleştirilir. Uygulama açıldığında, uygulamaya geri dönüldüğünde ve 10 dakikada bir yenilenir; ayrıntı ekranında elle yenileme düğmesi vardır.
 
 ## Telefona kurulum

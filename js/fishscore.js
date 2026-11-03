@@ -174,8 +174,58 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60) {
     if (Math.min(Math.abs(moon.age - 14.77), moon.age, 29.53 - moon.age) < 2) add(0.3, moon.name);
 
     const score = Math.round(Math.max(0, Math.min(10, s)) * 10) / 10;
-    return { ...r, score, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
+    const w = windScore(r, i, hours, type, lat, lng);
+    return { ...r, score, windScore: w.score, windNotes: w.notes, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
   }
+}
+
+// ——— Rüzgar puanı (0–10) — ana puandan ayrı, köşede küçük gösterilir ———
+// Hız + hamle (+ denizde dalga) + yönün bölgesel etkisi:
+//  • Boğaz/Marmara: sert lodos avı bozar, uzun lodos Boğaz'da yüzey akıntısını tersine çevirebilir.
+//  • Göl/dere: soğuk mevsimde soğuk kuzey rüzgarı yüzeyi soğutur, ılık güney rüzgarı ısıtır;
+//    uzun süre aynı yönden esen rüzgar yemi rüzgarın vurduğu kıyıda biriktirir.
+const inSector = (deg, from, to) => { const d = ((deg % 360) + 360) % 360; return from <= to ? d >= from && d < to : d >= from || d < to; };
+const isLodos = d => d != null && inSector(d, 202.5, 247.5);
+const isNorthCold = d => d != null && inSector(d, 292.5, 67.5);   // karayel, yıldız, poyraz
+const isSouthWarm = d => d != null && inSector(d, 112.5, 247.5);  // keşişleme, kıble, lodos
+const inMarmara = (lat, lng) => lat >= 40.2 && lat <= 41.35 && lng >= 26.4 && lng <= 30.0;
+const inBosphorus = (lat, lng) => lat >= 40.98 && lat <= 41.26 && lng >= 28.95 && lng <= 29.2;
+
+export function windScore(r, i, hours, type, lat, lng) {
+  const notes = [];
+  if (r.wind == null) return { score: null, notes };
+  let s;
+  const w = r.wind;
+  if (w < 5) { s = 5.5; notes.push('Durgun'); }
+  else if (w < 20) { s = 7.5; notes.push('Hafif-orta, ideal'); }
+  else if (w < 30) { s = 5; notes.push('Orta-sert'); }
+  else if (w < 40) { s = type === 'sea' ? 3 : 2.5; notes.push('Sert, atış zor'); }
+  else { s = 1; notes.push('Çok sert, tehlikeli'); }
+  if (r.gust != null && r.gust >= 60) { s -= 1.5; notes.push(`Hamle ${Math.round(r.gust)} km/s`); }
+  else if (r.gust != null && r.gust - w >= 25) { s -= 0.5; notes.push('Hamleli (ani esintiler)'); }
+  if (type === 'sea' && r.wave != null) {
+    if (r.wave >= 0.2 && r.wave < 0.8) s += 0.5;
+    else if (r.wave >= 1.5) { s -= 1; notes.push('Dalga yüksek'); }
+  }
+  const month = r.date.getMonth() + 1;
+  const coldSeason = month >= 10 || month <= 4;
+  if (type === 'sea' && inMarmara(lat, lng) && isLodos(r.windDir) && w >= 20) {
+    s -= 1.5; notes.push('Sert lodos: Marmara/Boğaz\'da av zorlaşır');
+    if (inBosphorus(lat, lng)) {
+      const last = hours.slice(Math.max(0, i - 12), i + 1);
+      if (last.length >= 10 && last.every(h => isLodos(h.windDir) && h.wind >= 20)) { s -= 0.5; notes.push('12 saattir lodos: Boğaz\'da akıntı tersine dönebilir'); }
+    }
+  }
+  if (type !== 'sea' && coldSeason && w >= 8) {
+    if (isNorthCold(r.windDir)) { s -= 1; notes.push('Soğuk kuzey rüzgarı suyu soğutur'); }
+    else if (isSouthWarm(r.windDir)) { s += 0.7; notes.push('Ilık güney rüzgarı suyu ısıtır'); }
+  }
+  if (type !== 'sea' && w >= 8) {
+    const last = hours.slice(Math.max(0, i - 24), i + 1).filter(h => h.windDir != null);
+    const sameDir = last.length >= 20 && last.every(h => Math.abs(((h.windDir - r.windDir + 540) % 360) - 180) <= 45);
+    if (sameDir) { s += 0.3; notes.push('24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir'); }
+  }
+  return { score: Math.round(Math.max(0, Math.min(10, s)) * 10) / 10, notes };
 }
 
 export const scoreClass = s => s >= 6.5 ? 's-good' : s >= 4.5 ? 's-mid' : 's-bad';
