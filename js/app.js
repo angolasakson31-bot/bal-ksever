@@ -101,49 +101,10 @@ function updateTopH() {
   document.documentElement.style.setProperty('--top-h', h + 'px');
 }
 
-// Alttan açılan panel: tutamaca dokun = aç/kapat, sürükle = yükseklik seç
-function setupSheet() {
-  const sheet = $('#sheet');
-  const states = ['peek', 'half', 'full'];
-  const heights = () => {
-    const H = $('#tab-map').clientHeight;
-    return { peek: 128, half: H * 0.5, full: H - 8 };
-  };
-  let startY = 0, startH = 0, moved = false, dragging = false;
-  const down = e => {
-    if (e.target.closest('.seg-mini')) return;
-    dragging = true; moved = false; startY = e.clientY; startH = sheet.getBoundingClientRect().height;
-    sheet.classList.add('dragging');
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-  };
-  const move = e => {
-    if (!dragging) return;
-    const dy = startY - e.clientY;
-    if (Math.abs(dy) > 6) moved = true;
-    if (moved) sheet.style.height = Math.max(90, Math.min(heights().full, startH + dy)) + 'px';
-  };
-  const up = () => {
-    if (!dragging) return;
-    dragging = false; sheet.classList.remove('dragging');
-    if (!moved) {
-      const cur = sheet.dataset.state;
-      sheet.dataset.state = cur === 'full' ? 'half' : cur === 'half' ? 'full' : 'half';
-    } else {
-      const h = sheet.getBoundingClientRect().height, hs = heights();
-      sheet.dataset.state = states.reduce((b, k) => (Math.abs(hs[k] - h) < Math.abs(hs[b] - h) ? k : b), 'half');
-    }
-    sheet.style.height = '';
-    try { localStorage.setItem('sheet', sheet.dataset.state); } catch { /* yok */ }
-  };
-  for (const el of [$('#sheet-handle'), $('.sheet-head')]) {
-    el.addEventListener('pointerdown', down);
-    el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointercancel', up);
-  }
-  const saved = ls('sheet');
-  if (states.includes(saved)) sheet.dataset.state = saved;
+function setupResize() {
   window.addEventListener('resize', updateTopH);
+  // Sağdaki yuvarlak düğmeler kartların hemen üstünde dursun
+  try { new ResizeObserver(([e]) => $('#tab-map').style.setProperty('--card-h', Math.round(e.target.offsetHeight) + 'px')).observe($('.carousel-wrap')); } catch { /* yok */ }
   try { new ResizeObserver(updateTopH).observe($('#install-hint')); } catch { /* yok */ }
 }
 function showTab(name) {
@@ -418,20 +379,27 @@ function fitAll() {
   else map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])), { padding: [40, 40], maxZoom: 15 });
 }
 
+const spotMarkers = new Map(); // mera id -> işaret
 function renderMapMarkers() {
   if (!map) return;
-  spotLayer.clearLayers(); catchLayer.clearLayers();
+  spotLayer.clearLayers(); catchLayer.clearLayers(); spotMarkers.clear();
   for (const s of state.spots) {
     if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng)) continue;
     const info = rankInfo.get(s.id);
     // Yuvarlakta puan (uzaktan okunur), sol üst köşede sıra numarası
-    const html = `<div class="mk"><span class="mk-dot" style="background:${info ? scoreColor(info.score) : 'var(--muted)'}">${info ? fmt(info.score, 1) : '•'}</span>` +
+    const html = `<div class="mk${s.id === selKey ? ' sel' : ''}"><span class="mk-dot" style="background:${info ? scoreColor(info.score) : 'var(--muted)'}">${info ? fmt(info.score, 1) : '•'}</span>` +
       `${info ? `<span class="mk-rank">${info.rank}</span>` : ''}<span class="mk-name">${esc(s.name)}${(() => { const n = catchesAt({ ...s, key: s.id }).length; return n ? ` · 🐟${n}` : ''; })()}</span></div>`;
     const marker = L.marker([s.lat, s.lng], {
       icon: L.divIcon({ className: 'mk-wrap', html, iconSize: [42, 42], iconAnchor: [21, 21] }),
       zIndexOffset: info ? 1000 - info.rank : 0, title: s.name,
     });
-    marker.on('click', () => { if (!justLongPressed(marker.getElement())) openDetail({ ...s, key: s.id }); });
+    marker.on('click', () => {
+      if (justLongPressed(marker.getElement())) return;
+      // Kartı olan merada ilk dokunuş kartı getirir, ikinci dokunuş detayı açar
+      if (selKey !== s.id && $(`#rank-list .rank-item[data-key="${CSS.escape(s.id)}"]`)) selectCard(s.id, { scroll: true, pan: false });
+      else openDetail({ ...s, key: s.id });
+    });
+    spotMarkers.set(s.id, marker);
     marker.on('add', () => { const el = marker.getElement(); if (el && !el.dataset.lpBound) { el.dataset.lpBound = 1; onLongPress(el, () => openSpotMenu(s)); } });
     marker.addTo(spotLayer);
   }
@@ -557,8 +525,6 @@ function showResults(res, q) {
   state.searchResults = res;
   box.hidden = false;
   box.parentElement.classList.add('open');
-  const sheet = $('#sheet');
-  if (sheet && res.length) sheet.dataset.state = 'peek'; // sonuçlar görünsün
   box.innerHTML = res.length
     ? res.map((p, i) => `<button type="button" class="result" data-result="${i}"><b>${esc(p.name)}${p.kind ? ` <span class="tag">${esc(p.kind)}</span>` : ''}</b><small>${esc(p.detail || '')}</small></button>`).join('') +
       '<button type="button" class="result close" data-result="close">✕ Kapat</button>'
@@ -578,8 +544,6 @@ function goToPlace(p) {
   if (searchArea) map.removeLayer(searchArea);
   searchArea = L.circle([p.lat, p.lng], { radius: 250, color: '#e11d48', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(map);
   setTimeout(() => { if (searchArea) { map.removeLayer(searchArea); searchArea = null; } }, 15000);
-  const sheet = $('#sheet');
-  if (sheet) sheet.dataset.state = 'peek';
   toast(`📍 ${p.name}: tam yere dokunun = tahmin, basılı tutun = mera ekle`, 5000);
   const list = [{ name: p.name, detail: p.detail, lat: p.lat, lng: p.lng, bbox: p.bbox }, ...recentSearches().filter(x => x.name !== p.name)].slice(0, 5);
   try { localStorage.setItem('recentSearches', JSON.stringify(list)); } catch { /* yok */ }
@@ -702,10 +666,10 @@ const MODE_HELP = {
 };
 
 // Kart içinde küçük 6 saatlik hava şeridi
-function miniWx(a, from) {
+function miniWx(a, from, hours = 24) {
   const cells = [];
-  // 24 saat: ilk bakışta 6 saat görünür, sola kaydırınca devamı
-  for (let k = 0; k < 24; k++) {
+  // 24 saat: ilk bakışta 6 saat görünür, sola kaydırınca devamı (kartlarda yalnız 6 saat)
+  for (let k = 0; k < hours; k++) {
     const r = rowAt(a, new Date(from.getTime() + k * 3600e3));
     if (!r) break;
     const newDay = k > 0 && r.date.getHours() === 0;
@@ -713,7 +677,7 @@ function miniWx(a, from) {
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
       `<span class="mr">💧${fmt(r.rainProb ?? 0)}</span></span>`);
   }
-  return cells.length ? `<span class="mini-wx" title="Sola kaydırın: 24 saat">${cells.join('')}</span>` : '';
+  return cells.length ? `<span class="mini-wx${hours <= 6 ? ' fixed' : ''}"${hours > 6 ? ' title="Sola kaydırın: 24 saat"' : ''}>${cells.join('')}</span>` : '';
 }
 const topReasons = r => (rankMode === 'combo' ? [...r.reasons, ...(r.dirNotes || [])] : r.reasons)
   .filter(([v]) => v !== 0).sort((x, y) => Math.abs(y[0]) - Math.abs(x[0])).slice(0, 3)
@@ -780,12 +744,13 @@ async function renderRank(force = false) {
     catch (e) { toast(e.message); }
   }
   if (!places.length) {
-    box.innerHTML = `<div class="empty"><span class="big">🎯</span>Henüz mera yok.<br>Haritada balık tuttuğunuz yerlere
-      uzun basın veya <b>＋ Mera ekle</b>'ye dokunun. Eklediğiniz bütün meralar burada en iyiden en kötüye sıralanır.</div>`;
+    box.innerHTML = `<div class="rank-item empty">🎯 Henüz mera yok. Haritada balık tuttuğunuz yere <b>basılı tutun</b>
+      veya <b>＋</b> düğmesine dokunun. Meralar burada en iyiden kötüye sıralanır.</div>`;
+    $('#rank-dots').innerHTML = '';
     return;
   }
   const seq = ++rankSeq;
-  if (!box.querySelector('.rank-item')) box.innerHTML = '<div class="empty">Meralar hesaplanıyor… 🎣</div>';
+  if (!box.querySelector('.rank-item')) box.innerHTML = '<div class="rank-item empty">Meralar hesaplanıyor… 🎣</div>';
   const tw = rankWhen === 'trip' ? tripWindow() : null;
   const results = await Promise.all(places.map(p => analyze(p, { force }).then(a => {
     if (!tw) return { a, r: targetRow(a) };
@@ -809,28 +774,73 @@ async function renderRank(force = false) {
   ok.forEach((x, i) => { if (x.a.place.key !== 'me') rankInfo.set(x.a.place.key, { rank: i + 1, score: x.v ?? 0, danger: x.r.danger }); });
   renderMapMarkers();
   const offline = results.some(x => x.a?.cond.offline);
-  box.innerHTML = (offline ? '<p class="warn">Çevrimdışı: kayıtlı son veriler gösteriliyor.</p>' : '') +
-    ($('#sheet-count').textContent = `· ${ok.length} mera`, '') +
-    `<p class="muted rank-head">${ok.length} mera · ${combo ? '🎣💨 balık + rüzgar' : '🎣 balık'} puanına göre · ${WHEN_LABEL[rankWhen]} · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}<br>Basılı tutun: adını değiştir / sil</p>` +
+  const total = ok.length;
+  box.innerHTML =
     ok.map((x, i) => {
       const { a, r } = x;
-      if (x.trip) return tripCard(x, i);
-      const top = topReasons(r);
+      if (x.trip) return tripCard(x, i, total);
       const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
       return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(r)}
-        <span class="rank-no">${i + 1}</span>
-        <span class="rank-score">${scorePill({ score: x.v })}<small>${scoreShort(x.v, r.danger)}</small></span>
-        <span class="rank-body">
-          <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
-          <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)}</span>
-          <span class="rank-meta">${esc(summaryLine(r, a.type))}</span>
-          ${miniWx(a, r.date)}
-          <span class="rank-meta">🐟 ${esc(sp)}</span>
-          ${catchLine(a.place)}
-          <span class="rank-why">${top}</span>
-        </span></button>`;
+        <span class="rank-top">
+          <span class="rank-no">${i + 1}<small>/${total}</small></span>
+          ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
+        </span>
+        <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
+        <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
+        ${miniWx(a, r.date, 6)}
+        <span class="rank-meta">🐟 ${esc(sp)}</span>
+        ${catchLine(a.place)}
+      </button>`;
     }).join('') +
-    bad.map(x => `<div class="card"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
+    bad.map(x => `<div class="rank-item bad"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
+  $('#when-label').textContent = '⏱ ' + WHEN_SHORT[rankWhen];
+  $('#mode-label').textContent = combo ? '🎣💨 Balık+rüzgar' : '🎣 Balık';
+  $('.map-bar').classList.toggle('offline', offline);
+  $('#rank-refresh').title = `Yenile · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}${offline ? ' (çevrimdışı)' : ''}`;
+  renderDots();
+  // Önceki seçili kart duruyorsa ona dön, yoksa ilk kart
+  const keep = selKey && box.querySelector(`.rank-item[data-key="${CSS.escape(selKey)}"]`);
+  selectCard(keep ? selKey : ok[0]?.a.place.key, { scroll: true, pan: false, instant: true });
+}
+
+// —— Kart ↔ harita eşleşmesi ——
+let selKey = null;
+const WHEN_SHORT = { now: 'Şimdi', trip: 'Gidip geleceğim', 'o0.5': '+½ saat', o1: '+1 saat', o2: '+2 saat', o3: '+3 saat', o5: '+5 saat', o6: '+6 saat', o12: '+12 saat',
+  evening: 'Bu akşam', morning: 'Yarın sabah', tomorrowEvening: 'Yarın akşam', best24: '24 saatin en iyisi', custom: 'Seçilen zaman' };
+const cards = () => [...$('#rank-list').querySelectorAll('.rank-item[data-key]')];
+function renderDots() {
+  const n = cards().length;
+  $('#rank-dots').innerHTML = n > 1 && n <= 12 ? cards().map(c => `<i data-dot="${esc(c.dataset.key)}"></i>`).join('') : '';
+}
+function selectCard(key, { scroll = false, pan = true, instant = false } = {}) {
+  if (!key) return;
+  const card = cards().find(c => c.dataset.key === key);
+  if (!card) return;
+  const changed = selKey !== key;
+  selKey = key;
+  cards().forEach(c => c.classList.toggle('sel', c === card));
+  document.querySelectorAll('#rank-dots i').forEach(d => d.classList.toggle('on', d.dataset.dot === key));
+  if (scroll) {
+    const list = $('#rank-list');
+    programmatic = Date.now();
+    list.scrollTo({ left: card.offsetLeft - (list.clientWidth - card.offsetWidth) / 2, behavior: instant ? 'auto' : 'smooth' });
+  }
+  for (const [id, m] of spotMarkers) m.getElement()?.querySelector('.mk')?.classList.toggle('sel', id === key);
+  if (pan && changed && map) {
+    const a = state.analyses?.get(key);
+    if (a) map.panTo([a.place.lat, a.place.lng], { animate: true });
+  }
+}
+let programmatic = 0;
+function onCarouselScroll() {
+  if (Date.now() - programmatic < 700) return; // kendi kaydırmamız
+  const list = $('#rank-list');
+  const mid = list.scrollLeft + list.clientWidth / 2;
+  const best = cards().reduce((b, c) => {
+    const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+    return !b || d < b.d ? { c, d } : b;
+  }, null);
+  if (best) selectCard(best.c.dataset.key);
 }
 
 function catchLine(place) {
@@ -840,24 +850,24 @@ function catchLine(place) {
   return `<span class="rank-meta catch-line">📒 Bu merada ${sm.n} balık${sm.species ? ` · en çok ${esc(sm.species)}` : ''}${sm.bait ? ` · ${esc(sm.bait)}` : ''}</span>`;
 }
 
-function tripCard(x, i) {
+function tripCard(x, i, total) {
   const { a, trip: t } = x;
   const b = x.show;
   const val = modeVal;
   const sp = speciesScores(b, a.type).slice(0, 3).map(s => s.name).join(', ');
   return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge({ ...b, windScore: t.avgWind })}
-    <span class="rank-no">${i + 1}</span>
-    <span class="rank-score">${scorePill({ score: x.v })}<small>ortalama</small></span>
-    <span class="rank-body">
-      <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
-      <span class="rank-time">${t.danger ? '⚠️ Aralıkta tehlikeli saat var · ' : ''}En iyi an: <b>${hh(b.date)}</b> (${fmt(val(b), 1)})</span>
-      <span class="trip-strip">${t.list.map(r => `<i style="background:${scoreColor(val(r))}" title="${hh(r.date)} · ${fmt(val(r), 1)}"></i>`).join('')}</span>
-      <span class="trip-axis"><span>${hh(t.list[0].date)}</span><span>${hh(t.list[t.list.length - 1].date)}</span></span>
-      <span class="rank-meta">${esc(summaryLine(b, a.type))}</span>
-      ${miniWx(a, t.list[0].date)}
-      <span class="rank-meta">🐟 ${esc(sp)}</span>
-      ${catchLine(a.place)}
-    </span></button>`;
+    <span class="rank-top">
+      <span class="rank-no">${i + 1}<small>/${total}</small></span>
+      ${scorePill({ score: x.v })}<span class="rank-lbl">ortalama</span>
+    </span>
+    <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
+    <span class="rank-time">${t.danger ? '⚠️ Aralıkta tehlikeli saat var · ' : ''}En iyi an: <b>${hh(b.date)}</b> (${fmt(val(b), 1)})</span>
+    <span class="trip-strip">${t.list.map(r => `<i style="background:${scoreColor(val(r))}" title="${hh(r.date)} · ${fmt(val(r), 1)}"></i>`).join('')}</span>
+    <span class="trip-axis"><span>${hh(t.list[0].date)}</span><span>${hh(t.list[t.list.length - 1].date)}</span></span>
+    <span class="rank-meta">${esc(summaryLine(b, a.type))}</span>
+    <span class="rank-meta">🐟 ${esc(sp)}</span>
+    ${catchLine(a.place)}
+  </button>`;
 }
 
 // —— Grafikler (SVG, tek eksen, dokununca değer) ——
@@ -1614,7 +1624,7 @@ function bindEvents() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.tab === 'map') renderRank(); });
   setInterval(() => { if (!document.hidden && state.tab === 'map') renderRank(); }, TTL);
   // Kaydırma (ör. 24 saatlik şerit) dokunma sayılmasın
-  let downXY = null, swiped = false;
+  let downXY = null, swiped = false, scrollT = null;
   $('#rank-list').addEventListener('pointerdown', e => { downXY = [e.clientX, e.clientY]; swiped = false; });
   $('#rank-list').addEventListener('pointermove', e => { if (downXY && Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 10) swiped = true; });
   $('#rank-list').addEventListener('scroll', () => { swiped = true; }, true);
@@ -1622,8 +1632,15 @@ function bindEvents() {
     const it = e.target.closest('.rank-item');
     if (!it || justLongPressed(it) || swiped) { swiped = false; return; }
     const a = state.analyses?.get(it.dataset.key);
-    if (a) openDetail(a.place, rankWhen === 'trip');
+    if (!a) return;
+    if (selKey !== it.dataset.key) selectCard(it.dataset.key, { scroll: true });
+    openDetail(a.place, rankWhen === 'trip');
   });
+  $('#rank-list').addEventListener('scroll', () => { clearTimeout(scrollT); scrollT = setTimeout(onCarouselScroll, 90); }, { passive: true });
+  $('#rank-dots').addEventListener('click', e => { const d = e.target.closest('[data-dot]'); if (d) selectCard(d.dataset.dot, { scroll: true }); });
+  document.querySelectorAll('[data-open-rank]').forEach(b => b.addEventListener('click', () => $('#rank-dialog').showModal()));
+  $('#rank-dialog-close').addEventListener('click', () => $('#rank-dialog').close());
+  $('#rank-dialog').addEventListener('click', e => { if (e.target === $('#rank-dialog')) $('#rank-dialog').close(); });
   $('#wx-close').addEventListener('click', () => $('#wx-dialog').close());
   $('#wx-body').addEventListener('click', onDetailClick);
   $('#wx-body').addEventListener('change', onDetailWaterChange);
@@ -1664,7 +1681,7 @@ function bindEvents() {
 async function init() {
   bindEvents();
   bindSugg();
-  setupSheet();
+  setupResize();
   setupInstallHint();
   await loadData();
   refreshAll();
