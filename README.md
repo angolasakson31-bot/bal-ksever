@@ -12,7 +12,7 @@ Kıyıdan balık tutan arkadaşlar için av günlüğü. Telefonda uygulama gibi
 - Ayrıntılı tahmin içeriği: öneri metni (ne zaman, hangi tür, hangi yem/takım, rüzgara göre nereye atılır), türlere göre tahmin,
   grafikler (skor, rüzgar/hamle, dalga/soluğan veya yağış, hava/su sıcaklığı, basınç), ayrıntılı hava (hissedilen, nem, görüş, UV,
   dalga periyodu, akıntı, güneş ve ay doğuş/batış, solunar).
-- **Harita görünümleri (sağ üst düğme):** 🗺️ Detaylı (CARTO Voyager, bol isimli, varsayılan) · 🛰️ Uydu + isimler (Esri) · 🧭 Standart (OpenStreetMap, en güncel) · ⛰️ Topoğrafik (OpenTopoMap) · ⚓ Deniz işaretleri katmanı (OpenSeaMap). Hepsi ücretsiz, anahtarsız; seçim hatırlanır.
+- **Harita:** 🗺️ Detaylı, bol yer isimli (CARTO Voyager, ücretsiz, anahtarsız).
 - **Dokunulan yerin adı:** haritada bir noktaya dokununca o yerin adı (göl, köy, iskele…) gösterilir ve mera kaydında otomatik dolar.
 - **Haritada yer arama:** yazarken öneri (Photon) ve “Ara” ile ayrıntılı arama (Nominatim), iki ücretsiz OpenStreetMap servisi birlikte; Türkiye öncelikli, haritada bakılan bölgeye yakın sonuçlar önce, her sonuçta tür (köy, mahalle, dere, göl, iskele…) ve il/ilçe. Sonuca dokununca harita oraya gider (iğne konmaz); tam yeri kullanıcı seçer. Son 5 arama hatırlanır.
 - **Meraya basılı tut:** adını değiştir, sil, düzenle, av ekle, yol tarifi.

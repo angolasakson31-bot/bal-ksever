@@ -352,17 +352,9 @@ function initMap() {
   if (!map) {
     map = L.map('map', { zoomControl: false }).setView([DEFAULT_PLACE.lat, DEFAULT_PLACE.lng], 10);
     L.control.zoom({ position: 'topright' }).addTo(map);
-    const bases = baseLayers();
-    let baseName = ls('mapBase');
-    if (!bases[baseName]) baseName = Object.keys(bases)[0];
-    bases[baseName].addTo(map);
+    baseLayer().addTo(map);
     spotLayer = L.layerGroup().addTo(map);
     catchLayer = L.layerGroup().addTo(map);
-    const seamarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, maxNativeZoom: 18, attribution: '&copy; OpenSeaMap' });
-    if (ls('seamarks') === '1') seamarks.addTo(map);
-    L.control.layers(bases, { '⚓ Deniz işaretleri': seamarks, '📍 Meralar': spotLayer, '🐟 Avlar': catchLayer }, { collapsed: true, position: 'topright' }).addTo(map);
-    map.on('baselayerchange', e => { try { localStorage.setItem('mapBase', e.name); } catch { /* yok */ } });
-    map.on('overlayadd overlayremove', e => { if (e.layer === seamarks) try { localStorage.setItem('seamarks', e.type === 'overlayadd' ? '1' : '0'); } catch { /* yok */ } });
     const addAt = e => { if (Date.now() - lastMenuAt > 1200) openSpotDialog(null, e.latlng); };
     map.on('contextmenu', addAt); // boş yere basılı tut = yeni mera (çift dokunma = yakınlaştır)
     map.on('click', e => mapPointPopup(e.latlng));
@@ -378,21 +370,10 @@ function initMap() {
   }, 60));
 }
 
-// Ücretsiz, anahtarsız ve sürekli güncellenen harita katmanları
-function baseLayers() {
-  const esri = path => `https://server.arcgisonline.com/ArcGIS/rest/services/${path}/MapServer/tile/{z}/{y}/{x}`;
-  return {
-    '🗺️ Detaylı (bol isimli)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd', maxZoom: 20, attribution: '&copy; OpenStreetMap &copy; CARTO' }),
-    '🛰️ Uydu + isimler': L.layerGroup([
-      L.tileLayer(esri('World_Imagery'), { maxZoom: 19, maxNativeZoom: 18, attribution: 'Uydu &copy; Esri, Maxar, Earthstar Geographics' }),
-      L.tileLayer(esri('Reference/World_Boundaries_and_Places'), { maxZoom: 19, maxNativeZoom: 18 }),
-      L.tileLayer(esri('Reference/World_Transportation'), { maxZoom: 19, maxNativeZoom: 18, opacity: 0.7 }),
-    ]),
-    '🧭 Standart (OSM, en güncel)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap katkıcıları' }),
-    '⛰️ Topoğrafik (göl/dere)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-      subdomains: 'abc', maxZoom: 19, maxNativeZoom: 17, attribution: '&copy; OpenTopoMap (CC-BY-SA), OpenStreetMap' }),
-  };
+// Ücretsiz, anahtarsız ve sürekli güncellenen harita (bol yer isimli)
+function baseLayer() {
+  return L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 20, attribution: '&copy; OpenStreetMap &copy; CARTO' });
 }
 
 // Dokunulan noktanın adı (göl, köy, iskele…) — OpenStreetMap Nominatim
@@ -1369,7 +1350,7 @@ const blobToDataUrl = b => new Promise(r => { const fr = new FileReader(); fr.on
 async function backupPayload() {
   const catches = await Promise.all(state.catches.map(async c => ({ ...c, photo: c.photo ? await blobToDataUrl(c.photo) : null })));
   const keep = {};
-  for (const k of ['checklist', 'trip', 'rankMode', 'recentSearches', 'mapBase']) { const v = ls(k); if (v != null) keep[k] = v; }
+  for (const k of ['checklist', 'trip', 'rankMode', 'recentSearches']) { const v = ls(k); if (v != null) keep[k] = v; }
   return { app: 'rastgele', version: 1, exportedAt: new Date().toISOString(), catches, spots: state.spots, settings: keep };
 }
 async function importPayload(data) {
