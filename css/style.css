@@ -684,3 +684,21 @@ body.map-mode main { padding: 0; max-width: none; }
 .wx-hint { display: none; }
 .carousel .wx-hint { display: block; font-size: .58rem; color: var(--text-2); margin: 0 0 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 body.wxhint-off .carousel .wx-hint { display: none; }
+
+/* Kartlar: bir kademe daha küçük */
+.carousel { gap: 6px; }
+.carousel .rank-item { flex-basis: min(232px, calc(100vw - 120px)); padding: 5px 7px; gap: 0; border-radius: 11px; }
+.carousel .rank-item .wind-badge { top: 3px; right: 5px; font-size: .56rem; padding: 0 4px; gap: 2px; }
+.carousel .rank-top { gap: 5px; }
+.carousel .rank-top .rank-no { font-size: .72rem; }
+.carousel .rank-top .score-pill { font-size: .74rem; min-width: 30px; padding: 0 4px; border-radius: 7px; }
+.carousel .rank-lbl { font-size: .6rem; }
+.carousel .rank-name { font-size: .76rem; line-height: 1.25; }
+.carousel .rank-name .tag { font-size: .56rem; padding: 0 4px; }
+.carousel .rank-time, .carousel .rank-meta, .carousel .catch-line { font-size: .62rem; line-height: 1.3; }
+.carousel .mini-wx { margin: 2px 0 1px; padding: 1px; border-radius: 6px; }
+.carousel .mini-wx .mc { flex-basis: calc((100% - 10px) / 6); padding: 1px 0; font-size: .5rem; border-radius: 5px; }
+.carousel .mini-wx .mi { font-size: .66rem; }
+.carousel .mini-wx .mtp { font-size: .56rem; }
+.carousel .wx-hint { font-size: .52rem; }
+.carousel .trip-strip i { height: 6px; }
