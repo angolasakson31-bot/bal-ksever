@@ -664,11 +664,13 @@ function miniWx(a, from, hours = 24) {
     const r = rowAt(a, new Date(from.getTime() + k * 3600e3));
     if (!r) break;
     const newDay = k > 0 && r.date.getHours() === 0;
-    cells.push(`<span class="mc${newDay ? ' day' : ''}"><span class="mt">${newDay ? dayShort(r.date) : hh(r.date)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}${(r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : ''}</span>` +
+    const sv = modeVal(r); // o saatin balık puanı (seçili puan türüne göre)
+    cells.push(`<span class="mc${newDay ? ' day' : ''}"><span class="mt">${newDay ? dayShort(r.date) : hh(r.date)}</span>` +
+      `<span class="ms" style="background:${scoreColor(sv)}" title="Bu saatin balık puanı">${r.danger ? '⚠' : ''}${fmt(sv, 1)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}${(r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : ''}</span>` +
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
       `<span class="mr">💧${fmt(r.rainProb ?? 0)}</span></span>`);
   }
-  return cells.length ? `<span class="mini-wx${hours <= 6 ? ' fixed' : ''}"${hours > 6 ? ' title="Sola kaydırın: 24 saat"' : ''}>${cells.join('')}</span>${hours > 6 ? '<span class="wx-hint">⟵ 24 saat için hava şeridini kaydır</span>' : ''}` : '';
+  return cells.length ? `<span class="mini-wx${hours <= 6 ? ' fixed' : ''}"${hours > 6 ? ' title="Sola kaydırın: 24 saat"' : ''}>${cells.join('')}</span>${hours > 6 ? '<span class="wx-hint">⟵ 24 saat için kaydır · renkli sayı = o saatin balık puanı</span>' : ''}` : '';
 }
 const topReasons = r => (rankMode === 'combo' ? [...r.reasons, ...(r.dirNotes || [])] : r.reasons)
   .filter(([v]) => v !== 0).sort((x, y) => Math.abs(y[0]) - Math.abs(x[0])).slice(0, 3)
