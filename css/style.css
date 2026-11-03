@@ -673,3 +673,14 @@ body.map-mode main { padding: 0; max-width: none; }
 .carousel .mini-wx .mc { padding: 1px 0; font-size: .55rem; line-height: 1.1; }
 .carousel .mini-wx .mi { font-size: .74rem; }
 .carousel .mini-wx .mtp { font-size: .6rem; }
+
+/* Kart içinde 24 saatlik hava: şerit kendi içinde kayar, kartları kaydırmaz */
+.carousel .mini-wx {
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; touch-action: pan-x;
+  -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); mask-image: linear-gradient(to right, #000 85%, transparent);
+  background: var(--surface-2); border-radius: 8px; padding: 2px;
+}
+.carousel .mini-wx .mc { flex: 0 0 calc((100% - 10px) / 6); scroll-snap-align: start; background: var(--surface); }
+.wx-hint { display: none; }
+.carousel .wx-hint { display: block; font-size: .58rem; color: var(--text-2); margin: 0 0 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.wxhint-off .carousel .wx-hint { display: none; }
