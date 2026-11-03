@@ -93,12 +93,66 @@ function refreshAll() {
 }
 
 // ————————————————— Sekmeler —————————————————
+// Tam ekran harita için üst çubuğun (ve kurulum ipucunun) yüksekliği
+function updateTopH() {
+  const hint = $('#install-hint');
+  const h = $('.topbar').offsetHeight + (hint && !hint.hidden ? hint.offsetHeight : 0);
+  document.documentElement.style.setProperty('--top-h', h + 'px');
+}
+
+// Alttan açılan panel: tutamaca dokun = aç/kapat, sürükle = yükseklik seç
+function setupSheet() {
+  const sheet = $('#sheet');
+  const states = ['peek', 'half', 'full'];
+  const heights = () => {
+    const H = $('#tab-map').clientHeight;
+    return { peek: 128, half: H * 0.5, full: H - 8 };
+  };
+  let startY = 0, startH = 0, moved = false, dragging = false;
+  const down = e => {
+    if (e.target.closest('.seg-mini')) return;
+    dragging = true; moved = false; startY = e.clientY; startH = sheet.getBoundingClientRect().height;
+    sheet.classList.add('dragging');
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const move = e => {
+    if (!dragging) return;
+    const dy = startY - e.clientY;
+    if (Math.abs(dy) > 6) moved = true;
+    if (moved) sheet.style.height = Math.max(90, Math.min(heights().full, startH + dy)) + 'px';
+  };
+  const up = () => {
+    if (!dragging) return;
+    dragging = false; sheet.classList.remove('dragging');
+    if (!moved) {
+      const cur = sheet.dataset.state;
+      sheet.dataset.state = cur === 'full' ? 'half' : cur === 'half' ? 'full' : 'half';
+    } else {
+      const h = sheet.getBoundingClientRect().height, hs = heights();
+      sheet.dataset.state = states.reduce((b, k) => (Math.abs(hs[k] - h) < Math.abs(hs[b] - h) ? k : b), 'half');
+    }
+    sheet.style.height = '';
+    try { localStorage.setItem('sheet', sheet.dataset.state); } catch { /* yok */ }
+  };
+  for (const el of [$('#sheet-handle'), $('.sheet-head')]) {
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  }
+  const saved = ls('sheet');
+  if (states.includes(saved)) sheet.dataset.state = saved;
+  window.addEventListener('resize', updateTopH);
+  try { new ResizeObserver(updateTopH).observe($('#install-hint')); } catch { /* yok */ }
+}
 function showTab(name) {
   state.tab = name;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === `tab-${name}`));
   document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $('#page-title').textContent = $(`#tab-${name}`).dataset.title;
-  $('#fab').hidden = name === 'more';
+  $('#fab').hidden = name === 'more' || name === 'map';
+  document.body.classList.toggle('map-mode', name === 'map');
+  updateTopH();
   if (name === 'map') { initMap(); renderRank(); }
   if (name === 'stats') renderStats();
   if (name === 'more') renderMore();
@@ -244,7 +298,8 @@ const rankInfo = new Map(); // mera id -> { rank, score, danger }
 function initMap() {
   if (!window.L) { $('#map').innerHTML = '<div class="empty">Harita yüklenemedi. İnternet bağlantınızı kontrol edin.</div>'; return; }
   if (!map) {
-    map = L.map('map', { doubleClickZoom: false }).setView([DEFAULT_PLACE.lat, DEFAULT_PLACE.lng], 10);
+    map = L.map('map', { doubleClickZoom: false, zoomControl: false }).setView([DEFAULT_PLACE.lat, DEFAULT_PLACE.lng], 10);
+    L.control.zoom({ position: 'topright' }).addTo(map);
     const bases = baseLayers();
     let baseName = ls('mapBase');
     if (!bases[baseName]) baseName = Object.keys(bases)[0];
@@ -559,7 +614,7 @@ async function renderRank(force = false) {
     catch (e) { toast(e.message); }
   }
   if (!places.length) {
-    box.innerHTML = `<div class="empty"><span class="big">🎯</span>Henüz mera yok.<br>Yukarıdaki haritada balık tuttuğunuz yerlere
+    box.innerHTML = `<div class="empty"><span class="big">🎯</span>Henüz mera yok.<br>Haritada balık tuttuğunuz yerlere
       uzun basın veya <b>＋ Mera ekle</b>'ye dokunun. Eklediğiniz bütün meralar burada en iyiden en kötüye sıralanır.</div>`;
     return;
   }
@@ -589,6 +644,7 @@ async function renderRank(force = false) {
   renderMapMarkers();
   const offline = results.some(x => x.a?.cond.offline);
   box.innerHTML = (offline ? '<p class="warn">Çevrimdışı: kayıtlı son veriler gösteriliyor.</p>' : '') +
+    ($('#sheet-count').textContent = `· ${ok.length} mera`, '') +
     `<p class="muted rank-head">${ok.length} mera · ${combo ? '🎣💨 balık + rüzgar' : '🎣 balık'} puanına göre · ${WHEN_LABEL[rankWhen]} · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}<br>Basılı tutun: adını değiştir / sil</p>` +
     ok.map((x, i) => {
       const { a, r } = x;
@@ -757,7 +813,7 @@ async function openDetail(place, fromTrip = false) {
     const tw = rankWhen === 'trip' && isTripOpen ? tripWindow() : null;
     const best = tw ? tripSummary(a, tw.start, tw.end)?.best : null;
     const sel = best || now;
-    detail = { a, day: sel.date.toDateString(), sel, step: detail?.step || 30, trip: tw };
+    detail = { a, day: sel.date.toDateString(), sel, step: detail?.step || 30, trip: tw, tab: 'hourly' };
     renderDetail();
     $('#wx-dialog').scrollTop = 0;
   } catch (e) {
@@ -802,25 +858,10 @@ function renderDetail() {
   const C1 = 'var(--s1)', C2 = 'var(--s2)';
   const tm = d => (d ? fmtTime(d) : '—');
 
-  $('#wx-body').innerHTML = `
-    ${cond.offline ? `<p class="warn">Çevrimdışı: ${new Date(cond.fetchedAt).toLocaleString('tr-TR')} tarihli veri.</p>` : ''}
-    <div class="filter-row">
-      <select id="wx-water">
-        <option value="auto">Su tipi: otomatik (${WATER_TYPES[cond.seaDetected ? 'sea' : 'lake'].label})</option>
-        ${Object.entries(WATER_TYPES).map(([k, v]) => `<option value="${k}" ${place.water === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
-      </select>
-    </div>
-    <p class="muted fresh">Son güncelleme ${fmtTime(cond.fetchedAt)} · Open-Meteo (en iyi model otomatik) <button id="wx-refresh" class="btn small">↻ Yenile</button></p>
-    ${cond.marineDist ? `<p class="warn">🌊 Bu noktada deniz modeli boş döndüğü için dalga ve deniz suyu sıcaklığı ~${cond.marineDist} km uzaktaki en yakın deniz noktasından alındı.</p>` : ''}
-    ${type === 'sea' && !cond.seaDetected ? `<p class="warn">🌊 Bu nokta için dalga verisi bulunamadı. Puan dalgasız hesaplandı.</p>` : ''}
-    <details class="res-note"><summary>ℹ️ Veriler ne kadar yerel?</summary>
-      <p>Koordinat tam bu nokta. Güneş, ay ve alacakaranlık saatleri bu noktaya göre hesaplanıyor. Rüzgar, yağmur ve sıcaklık ise hava modelinin yaklaşık 7 km'lik bölge tahmini; sıcaklık yükseltiye göre düzeltiliyor. Dalga ve deniz suyu sıcaklığı yaklaşık 5–8 km'lik bölge tahmini; dar boğaz ve koylarda daha az hassas. Göl ve dere suyu sıcaklığı ölçülmüyor, son 5 günün havasından tahmin ediliyor (~). Yerel sağanakları ve rüzgarı kesen tepe ya da koyları model göremez.</p></details>
-    <div class="chips day-chips">${days.map(s => { const di = dayInfo(rows, s.rise); return `<button data-day="${s.rise.toDateString()}" class="${s.rise.toDateString() === detail.day ? 'active' : ''}">
-      <span class="dn">${s.rise.toDateString() === new Date().toDateString() ? 'Bugün' : s.rise.toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric' })}</span>
-      <span class="di">${di.icon}</span><span class="dt">${fmt(di.max)}° / ${fmt(di.min)}°</span>
-      <span class="dr">${di.rain >= 0.5 ? `💧${fmt(di.rain, 0)} mm` : '💧0'} · 💨${fmt(di.wind)}</span></button>`; }).join('')}</div>
-
-    <div class="card now-card">
+  const TABS = [['hourly', '⏱️ Saatlik'], ['species', '🐟 Türler'], ['charts', '📈 Grafikler'], ['detail', '🌤️ Ayrıntı']];
+  const tab = TABS.some(([k]) => k === detail.tab) ? detail.tab : 'hourly';
+  const tabHtml = {
+    hourly: () => `    <div class="card now-card">
       <div class="now-ico">${weatherIcon(sel.code, sel.isDay)}</div>
       <div class="now-main"><div class="now-t">${fmt(sel.temp)}°<small> hissedilen ${fmt(sel.feels)}°</small></div>
         <div class="now-w">${weatherWord(sel.code)} · ${sel.date.toLocaleDateString('tr-TR', { weekday: 'short' })} ${hh(sel.date)}</div></div>
@@ -864,21 +905,12 @@ function renderDetail() {
       <p class="chart-note">Simge: o saatin <b>en olası</b> havası (🌫️ = sis). Mavi sütun ve 💧%: yağmur <b>ihtimali</b>. %50 üstü büyük ihtimalle yağar, %20–50 yağabilir. mm: yağarsa miktarı. Simge yağmur göstermese de ihtimal yüksekse köşesine 💧 eklenir. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
     </div>
 
-    <div class="card score-card">${windBadge(sel)}
-      <div class="score-ring" style="border-color:${scoreColor(ringV)}">${fmt(ringV, 1)}<small>/ 10</small><small class="ring-kind">${combo ? '🎣💨' : '🎣'}</small></div>
-      <div class="score-text"><strong>${scoreLabel(ringV, sel.danger)}</strong>
-        <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${hh(sel.date)}${isNow ? ' · şu an' : ''}</div>
-        <ul>${sel.reasons.map(([v, t]) => `<li>${v > 0 ? '＋' : '－'} ${esc(t)}</li>`).join('')}</ul>
-        ${sel.windScore != null ? `<p class="wind-line">💨 Rüzgar puanı <b>${fmt(sel.windScore, 1)}</b>: ${esc(windName(sel.windDir, true))} ${fmt(sel.wind)} km/s · ${esc(sel.windNotes.join(' · '))}</p>
-        ${combo ? `<p class="wind-line">🎣💨 Halkadaki puan: <b>balık + rüzgar</b>. Rüzgar yönü etkisi: ${(sel.dirNotes || []).length ? esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : 'yok'}</p>
-          <p class="wind-line">🎣 Sadece balık puanı: <b>${fmt(sel.score, 1)}</b></p>` : ''}
-        ${!combo && sel.comboScore != null ? `<p class="wind-line">🎣💨 Balık + rüzgar puanı <b>${fmt(sel.comboScore, 1)}</b>${(sel.dirNotes || []).length ? ': ' + esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : ' (yön etkisi yok)'}</p>` : ''}` : ''}
-      </div>
-    </div>
+    <div class="card"><h3>Günün en iyi saatleri</h3><ul class="best-list">
+      ${best.map(r => `<li><span>${hh(r.date)} ${r.danger ? '⚠️' : ''}</span><b class="${scoreClass(modeVal(r))}">${fmt(modeVal(r), 1)}</b></li>`).join('')}
+    </ul></div>
 
-    <div class="card advice"><h3>💡 Öneri</h3>${advice.map(t => `<p>${t}</p>`).join('')}</div>
-
-    <div class="card"><h3>🐟 Türlere göre tahmin (${hh(sel.date)})</h3>
+`,
+    species: () => `    <div class="card"><h3>🐟 Türlere göre tahmin (${hh(sel.date)})</h3>
       <div class="hbars species-bars">${species.map(s => `<div class="hbar">
         <span class="name">${esc(s.name)}</span>
         <span class="track"><span class="fill" style="display:block;width:${s.score * 10}%"></span></span>
@@ -887,7 +919,8 @@ function renderDetail() {
       <p class="chart-note">Tür puanı: genel skor + sezon + o türün sevdiği su sıcaklığı + aktif olduğu saat${type === 'sea' ? ' + dalga tercihi' : ''}.</p>
     </div>
 
-    <div class="card"><h3>📈 Grafikler (${dayRows[0]?.date.toLocaleDateString('tr-TR', { weekday: 'long' }) || ''})</h3>
+`,
+    charts: () => `    <div class="card"><h3>📈 Grafikler (${dayRows[0]?.date.toLocaleDateString('tr-TR', { weekday: 'long' }) || ''})</h3>
       <h4>${combo ? 'Balık + rüzgar puanı' : 'Balık puanı'}</h4>${lineChart('score', dayRows, [{ key: combo ? 'comboScore' : 'score', label: 'Puan', color: C1 }], { decimals: 1, sel: selH })}
       <h4>Rüzgar (km/s)</h4>${lineChart('wind', dayRows, [{ key: 'wind', label: 'Rüzgar', color: C1 }, { key: 'gust', label: 'Hamle', color: C2 }], { unit: ' km/s', sel: selH })}
       ${type === 'sea' && dayRows.some(r => r.wave != null)
@@ -897,6 +930,13 @@ function renderDetail() {
       <h4>Basınç (hPa)</h4>${lineChart('pres', dayRows, [{ key: 'pressure', label: 'Basınç', color: C1 }], { unit: ' hPa', min0: false, sel: selH })}
     </div>
 
+`,
+    detail: () => `<div class="card"><h3>Su tipi</h3><div class="filter-row">
+      <select id="wx-water">
+        <option value="auto">Su tipi: otomatik (${WATER_TYPES[cond.seaDetected ? 'sea' : 'lake'].label})</option>
+        ${Object.entries(WATER_TYPES).map(([k, v]) => `<option value="${k}" ${place.water === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
+      </select>
+    </div></div>
     <div class="card"><h3>🌤️ Ayrıntılı hava (${hh(sel.date)})</h3><div class="metrics">
       ${metric('Rüzgar', `${arrow(sel.windDir)} ${fmt(sel.wind)} km/s`, `${windName(sel.windDir)} · hamle ${fmt(sel.gust)}`)}
       ${metric('Hava', `${fmt(sel.temp)} °C`, `hissedilen ${fmt(sel.feels)} °C`)}
@@ -914,10 +954,37 @@ function renderDetail() {
       ${metric('Ay doğuş/batış', `<span style="font-size:1rem">${tm(mt.rise)} / ${tm(mt.set)}</span>`, sol === 'major' ? 'şu an solunar büyük dönem' : sol === 'minor' ? 'şu an solunar küçük dönem' : '')}
     </div></div>
 
-    <div class="card"><h3>Günün en iyi saatleri</h3><ul class="best-list">
-      ${best.map(r => `<li><span>${hh(r.date)} ${r.danger ? '⚠️' : ''}</span><b class="${scoreClass(modeVal(r))}">${fmt(modeVal(r), 1)}</b></li>`).join('')}
-    </ul></div>
+    <details class="res-note"><summary>ℹ️ Veriler ne kadar yerel?</summary>
+      <p>Koordinat tam bu nokta. Güneş, ay ve alacakaranlık saatleri bu noktaya göre hesaplanıyor. Rüzgar, yağmur ve sıcaklık ise hava modelinin yaklaşık 7 km'lik bölge tahmini; sıcaklık yükseltiye göre düzeltiliyor. Dalga ve deniz suyu sıcaklığı yaklaşık 5–8 km'lik bölge tahmini; dar boğaz ve koylarda daha az hassas. Göl ve dere suyu sıcaklığı ölçülmüyor, son 5 günün havasından tahmin ediliyor (~). Yerel sağanakları ve rüzgarı kesen tepe ya da koyları model göremez.</p></details>`,
+  };
+  $('#wx-body').innerHTML = `
+    ${cond.offline ? `<p class="warn">Çevrimdışı: ${new Date(cond.fetchedAt).toLocaleString('tr-TR')} tarihli veri.</p>` : ''}
 
+    <p class="muted fresh">🕒 Güncel: ${fmtTime(cond.fetchedAt)} · ${WATER_TYPES[type].icon} ${WATER_TYPES[type].label} <button id="wx-refresh" class="btn small">↻ Yenile</button></p>
+    ${cond.marineDist ? `<p class="warn">🌊 Bu noktada deniz modeli boş döndüğü için dalga ve deniz suyu sıcaklığı ~${cond.marineDist} km uzaktaki en yakın deniz noktasından alındı.</p>` : ''}
+    ${type === 'sea' && !cond.seaDetected ? `<p class="warn">🌊 Bu nokta için dalga verisi bulunamadı. Puan dalgasız hesaplandı.</p>` : ''}
+
+    <div class="chips day-chips">${days.map(s => { const di = dayInfo(rows, s.rise); return `<button data-day="${s.rise.toDateString()}" class="${s.rise.toDateString() === detail.day ? 'active' : ''}">
+      <span class="dn">${s.rise.toDateString() === new Date().toDateString() ? 'Bugün' : s.rise.toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric' })}</span>
+      <span class="di">${di.icon}</span><span class="dt">${fmt(di.max)}° / ${fmt(di.min)}°</span>
+      <span class="dr">${di.rain >= 0.5 ? `💧${fmt(di.rain, 0)} mm` : '💧0'} · 💨${fmt(di.wind)}</span></button>`; }).join('')}</div>
+
+    <div class="card score-card">${windBadge(sel)}
+      <div class="score-ring" style="border-color:${scoreColor(ringV)}">${fmt(ringV, 1)}<small>/ 10</small><small class="ring-kind">${combo ? '🎣💨' : '🎣'}</small></div>
+      <div class="score-text"><strong>${scoreLabel(ringV, sel.danger)}</strong>
+        <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${hh(sel.date)}${isNow ? ' · şu an' : ''}</div>
+        <ul>${sel.reasons.map(([v, t]) => `<li>${v > 0 ? '＋' : '－'} ${esc(t)}</li>`).join('')}</ul>
+        ${sel.windScore != null ? `<p class="wind-line">💨 Rüzgar puanı <b>${fmt(sel.windScore, 1)}</b>: ${esc(windName(sel.windDir, true))} ${fmt(sel.wind)} km/s · ${esc(sel.windNotes.join(' · '))}</p>
+        ${combo ? `<p class="wind-line">🎣💨 Halkadaki puan: <b>balık + rüzgar</b>. Rüzgar yönü etkisi: ${(sel.dirNotes || []).length ? esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : 'yok'}</p>
+          <p class="wind-line">🎣 Sadece balık puanı: <b>${fmt(sel.score, 1)}</b></p>` : ''}
+        ${!combo && sel.comboScore != null ? `<p class="wind-line">🎣💨 Balık + rüzgar puanı <b>${fmt(sel.comboScore, 1)}</b>${(sel.dirNotes || []).length ? ': ' + esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : ' (yön etkisi yok)'}</p>` : ''}` : ''}
+      </div>
+    </div>
+
+    <div class="card advice"><h3>💡 Öneri</h3>${advice.map(t => `<p>${t}</p>`).join('')}</div>
+
+    <div class="dtabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-dtab="${k}" class="${k === tab ? 'active' : ''}">${l}</button>`).join('')}</div>
+    <div class="dtab-body">${tabHtml[tab]()}</div>
     <div class="popup-actions big">
       <a href="https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}" target="_blank" rel="noopener">🧭 Google yol tarifi</a>
       <a href="https://maps.apple.com/?daddr=${place.lat},${place.lng}" target="_blank" rel="noopener">🍎 Apple Haritalar</a>
@@ -940,6 +1007,8 @@ async function onDetailClick(e) {
   }
   const h = e.target.closest('.hour[data-t]');
   if (h) { detail.sel = detail.a.rows.find(r => r.date.getTime() === +h.dataset.t); renderDetail(); return; }
+  const dt = e.target.closest('[data-dtab]');
+  if (dt) { detail.tab = dt.dataset.dtab; renderDetail(); return; }
   const sl = e.target.closest('[data-slot]');
   if (sl) { detail.sel = rowAt(detail.a, new Date(+sl.dataset.slot)); detail.day = detail.sel.date.toDateString(); renderDetail(); return; }
   const st = e.target.closest('.seg-mini [data-step]');
@@ -1132,7 +1201,7 @@ function setupInstallHint() {
     $('#install-btn').hidden = false; hint.hidden = false;
     $('#install-btn').onclick = async () => { e.prompt(); await e.userChoice; hint.hidden = true; };
   });
-  $('#install-close').onclick = () => { hint.hidden = true; try { localStorage.setItem('hideInstall', '1'); } catch { /* yok */ } };
+  $('#install-close').onclick = () => { hint.hidden = true; updateTopH(); try { localStorage.setItem('hideInstall', '1'); } catch { /* yok */ } };
 }
 
 // ————————————————— Olaylar —————————————————
@@ -1291,6 +1360,7 @@ async function init() {
   $('#bait-list').innerHTML = BAITS.map(b => `<option value="${esc(b)}">`).join('');
   $('#method-list').innerHTML = METHODS.map(m => `<option value="${esc(m)}">`).join('');
   bindEvents();
+  setupSheet();
   setupInstallHint();
   await loadData();
   refreshAll();

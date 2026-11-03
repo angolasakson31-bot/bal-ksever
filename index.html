@@ -37,63 +37,73 @@
       <div id="catch-list" class="catch-list"></div>
     </section>
 
-    <!-- HARİTA + MERALARIM -->
+    <!-- HARİTA + MERALARIM: tam ekran harita + alttan açılan panel -->
     <section id="tab-map" class="tab" data-title="Harita & Meralarım">
-      <form id="map-search" class="map-search" role="search">
-        <input id="map-q" type="search" placeholder="Yer ara: Ankara, Sapanca, Akyazı…" enterkeyhint="search" autocomplete="off">
-        <button type="submit" class="btn primary">Ara</button>
-      </form>
-      <div id="map-recent" class="chips recent"></div>
-      <div id="map-results" class="map-results" hidden></div>
       <div id="map"></div>
-      <div class="map-tools">
-        <button id="map-locate" class="btn small">📍 Konumum</button>
-        <button id="map-fit" class="btn small">🔍 Tüm meralar</button>
-        <button id="map-add-spot" class="btn small primary">＋ Mera ekle</button>
-      </div>
-      <p class="map-hint">Meraya dokunun: saat saat hava ve balık tahmini. Meraya basılı tutun: adını değiştirin veya silin. Boş bir yere dokunun: o noktanın skoru; boş yere basılı tutun: yeni mera.</p>
 
-      <h2 class="section-title">🎯 Meralarım: en iyiden en kötüye</h2>
-      <div class="mode-row">
-        <span class="seg-mini" id="rank-mode">
-          <button data-mode="fish">🎣 Balık puanı</button>
-          <button data-mode="combo">🎣💨 Balık + rüzgar</button>
-        </span>
+      <div class="map-float-top">
+        <form id="map-search" class="map-search" role="search">
+          <input id="map-q" type="search" placeholder="🔎 Yer ara: Ankara, Sapanca, Akyazı…" enterkeyhint="search" autocomplete="off">
+          <button type="submit" class="btn primary">Ara</button>
+        </form>
+        <div id="map-recent" class="chips recent"></div>
+        <div id="map-results" class="map-results" hidden></div>
       </div>
-      <p class="muted mode-help" id="rank-mode-help"></p>
-      <div class="chips" id="rank-when">
-        <button data-when="now" class="active">Şimdi</button>
-        <button data-when="o0.5">+½ saat</button>
-        <button data-when="o1">+1 saat</button>
-        <button data-when="o2">+2 saat</button>
-        <button data-when="o3">+3 saat</button>
-        <button data-when="o5">+5 saat</button>
-        <button data-when="o6">+6 saat</button>
-        <button data-when="o12">+12 saat</button>
-        <button data-when="trip">🚗 Gidip geleceğim</button>
-        <button data-when="evening">Bu akşam</button>
-        <button data-when="morning">Yarın sabah</button>
-        <button data-when="tomorrowEvening">Yarın akşam</button>
-        <button data-when="best24">24 saatin en iyisi</button>
-        <button data-when="custom">📅 Gün/saat seç</button>
+
+      <div class="map-fabs">
+        <button id="map-locate" class="round-btn" title="Konumum" aria-label="Konumum">📍</button>
+        <button id="map-fit" class="round-btn" title="Tüm meraları göster" aria-label="Tüm meraları göster">🔍</button>
+        <button id="map-add-spot" class="round-btn primary" title="Mera ekle" aria-label="Mera ekle">＋</button>
       </div>
-      <div id="trip-row" class="card trip-row" hidden>
-        <div class="stepper"><span>Kaç saat sonra çıkacaksınız?</span>
-          <button type="button" data-step="go:-0.5">−</button><b id="trip-go">1</b><button type="button" data-step="go:0.5">＋</button></div>
-        <div class="stepper"><span>Kaç saat kalacaksınız?</span>
-          <button type="button" data-step="stay:-0.5">−</button><b id="trip-stay">4</b><button type="button" data-step="stay:0.5">＋</button></div>
-        <p class="muted" id="trip-text"></p>
+
+      <div id="sheet" class="sheet-panel" data-state="half">
+        <button id="sheet-handle" class="sheet-handle" aria-label="Paneli aç/kapat"><span></span></button>
+        <div class="sheet-head">
+          <h2>🎯 Meralarım <small id="sheet-count"></small></h2>
+          <span class="seg-mini" id="rank-mode">
+            <button data-mode="fish">🎣 Balık</button>
+            <button data-mode="combo">🎣💨 Balık + rüzgar</button>
+          </span>
+        </div>
+        <div class="sheet-body" id="sheet-body">
+          <details class="help-box"><summary>❓ Puanlar ve kullanım</summary>
+            <p id="rank-mode-help"></p>
+            <p>Meraya dokunun: saat saat hava ve balık tahmini. Meraya basılı tutun: adını değiştirin veya silin. Haritada boş yere dokunun: o noktanın puanı; boş yere basılı tutun: yeni mera.</p>
+            <p>Puan 0–10 arası bir tahmindir. Veriler her açılışta Open-Meteo'dan güncel çekilir (7 gün, saatlik).</p>
+          </details>
+          <div class="chips" id="rank-when">
+            <button data-when="now" class="active">Şimdi</button>
+            <button data-when="o0.5">+½ saat</button>
+            <button data-when="o1">+1 saat</button>
+            <button data-when="o2">+2 saat</button>
+            <button data-when="o3">+3 saat</button>
+            <button data-when="o5">+5 saat</button>
+            <button data-when="o6">+6 saat</button>
+            <button data-when="o12">+12 saat</button>
+            <button data-when="trip">🚗 Gidip geleceğim</button>
+            <button data-when="evening">Bu akşam</button>
+            <button data-when="morning">Yarın sabah</button>
+            <button data-when="tomorrowEvening">Yarın akşam</button>
+            <button data-when="best24">24 saatin en iyisi</button>
+            <button data-when="custom">📅 Gün/saat seç</button>
+          </div>
+          <div id="trip-row" class="card trip-row" hidden>
+            <div class="stepper"><span>Kaç saat sonra çıkacaksınız?</span>
+              <button type="button" data-step="go:-0.5">−</button><b id="trip-go">1</b><button type="button" data-step="go:0.5">＋</button></div>
+            <div class="stepper"><span>Kaç saat kalacaksınız?</span>
+              <button type="button" data-step="stay:-0.5">−</button><b id="trip-stay">4</b><button type="button" data-step="stay:0.5">＋</button></div>
+            <p class="muted" id="trip-text"></p>
+          </div>
+          <div id="rank-custom-row" class="filter-row" hidden>
+            <input id="rank-custom" type="datetime-local">
+          </div>
+          <div class="filter-row">
+            <label class="check" style="margin:0;flex:1"><input type="checkbox" id="rank-me"> Konumumu da ekle</label>
+            <button id="rank-refresh" class="btn small">↻ Yenile</button>
+          </div>
+          <div id="rank-list"></div>
+        </div>
       </div>
-      <div id="rank-custom-row" class="filter-row" hidden>
-        <input id="rank-custom" type="datetime-local">
-      </div>
-      <div class="filter-row">
-        <label class="check" style="margin:0;flex:1"><input type="checkbox" id="rank-me"> Konumumu da ekle</label>
-        <button id="rank-refresh" class="btn small">↻ Yenile</button>
-      </div>
-      <div id="rank-list"></div>
-      <p class="muted">Skor 0–10 arası bir tahmindir: su sıcaklığı, ışık, dalga, rüzgar, yağış, basınç ve ay hesaba katılır.
-        Veriler her açılışta Open-Meteo'dan güncel olarak çekilir (7 gün, saatlik).</p>
     </section>
 
     <!-- İSTATİSTİK -->
