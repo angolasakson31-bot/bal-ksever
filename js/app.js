@@ -189,6 +189,54 @@ function renderCatches() {
   list.innerHTML = html;
 }
 
+// Bir meradaki avlar: o meraya kaydedilenler + meraya 300 m'den yakın, merası seçilmemiş avlar
+const distM = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lng - b.lng) * 111320 * Math.cos(a.lat * Math.PI / 180));
+function catchesAt(place) {
+  const id = place.key && place.key !== 'me' ? place.key : place.id;
+  return state.catches.filter(c => (id && c.spotId === id) || (!c.spotId && c.lat != null && distM(c, place) < 300))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+function catchSummary(list) {
+  const n = list.reduce((t, c) => t + (c.count || 1), 0);
+  const top = (k) => { const m = new Map(); list.forEach(c => { if (c[k]) m.set(c[k], (m.get(c[k]) || 0) + (c.count || 1)); }); return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] || null; };
+  const hours = Array(24).fill(0); list.forEach(c => { hours[new Date(c.date).getHours()] += (c.count || 1); });
+  const bh = hours.indexOf(Math.max(...hours));
+  const biggest = list.filter(c => c.length).sort((a, b) => b.length - a.length)[0];
+  return { n, species: top('species'), bait: top('bait'), hour: n ? bh : null, biggest };
+}
+
+// ————————————————— Öneri düğmeleri (telefonun açılır listesi yerine) —————————————————
+// Kutunun altında küçük düğmeler: yazdıkça süzülür, formu kapatmaz. Kendi girdiğiniz değerler de eklenir.
+function suggItems(id) {
+  const used = k => [...new Set(state.catches.map(c => c[k]).filter(Boolean))];
+  const base = id === 'catch-species' ? SPECIES.filter(x => x.name !== 'Diğer').map(x => x.name)
+    : id === 'catch-bait' ? BAITS : METHODS;
+  const key = { 'catch-species': 'species', 'catch-bait': 'bait', 'catch-method': 'method' }[id];
+  const mine = used(key).filter(v => !base.some(b => b.toLocaleLowerCase('tr') === v.toLocaleLowerCase('tr')));
+  return [...mine, ...base];
+}
+function renderSugg(id) {
+  const box = document.querySelector(`.sugg[data-for="${id}"]`);
+  if (!box) return;
+  const q = $('#' + id).value.trim().toLocaleLowerCase('tr');
+  const items = suggItems(id).filter(v => !q || v.toLocaleLowerCase('tr').includes(q))
+    .filter(v => v.toLocaleLowerCase('tr') !== q).slice(0, 14);
+  box.innerHTML = items.map(v => `<button type="button" data-sugg="${esc(v)}">${esc(v)}</button>`).join('');
+}
+function bindSugg() {
+  for (const id of ['catch-species', 'catch-bait', 'catch-method']) {
+    const inp = $('#' + id);
+    inp.addEventListener('input', () => renderSugg(id));
+    inp.addEventListener('focus', () => renderSugg(id));
+    document.querySelector(`.sugg[data-for="${id}"]`).addEventListener('click', e => {
+      const b = e.target.closest('[data-sugg]'); if (!b) return;
+      inp.value = b.dataset.sugg;
+      renderSugg(id);
+      if (id === 'catch-species') checkSize();
+    });
+  }
+}
+
 // ————————————————— Av ekleme / düzenleme —————————————————
 let editing = null; // { id, photo, lat, lng }
 
@@ -216,6 +264,7 @@ function openCatchDialog(c = null, preset = {}) {
   showPhotoPreview(editing.photo);
   updateLocationText();
   checkSize();
+  ['catch-species', 'catch-bait', 'catch-method'].forEach(renderSugg);
   $('#catch-dialog').showModal();
 }
 
@@ -279,6 +328,7 @@ async function saveCatch(e) {
   } catch { /* yok */ }
   $('#catch-dialog').close();
   await loadData(); refreshAll();
+  if ($('#wx-dialog').open && detail) renderDetail();
   toast(editing.id ? 'Güncellendi' : 'Rastgele! Av kaydedildi 🎣');
 }
 
@@ -288,6 +338,7 @@ async function deleteCatch() {
   dropPhotoUrl(editing.id);
   $('#catch-dialog').close();
   await loadData(); refreshAll();
+  if ($('#wx-dialog').open && detail) renderDetail();
   toast('Silindi');
 }
 
@@ -298,7 +349,7 @@ const rankInfo = new Map(); // mera id -> { rank, score, danger }
 function initMap() {
   if (!window.L) { $('#map').innerHTML = '<div class="empty">Harita yüklenemedi. İnternet bağlantınızı kontrol edin.</div>'; return; }
   if (!map) {
-    map = L.map('map', { doubleClickZoom: false, zoomControl: false }).setView([DEFAULT_PLACE.lat, DEFAULT_PLACE.lng], 10);
+    map = L.map('map', { zoomControl: false }).setView([DEFAULT_PLACE.lat, DEFAULT_PLACE.lng], 10);
     L.control.zoom({ position: 'topright' }).addTo(map);
     const bases = baseLayers();
     let baseName = ls('mapBase');
@@ -312,8 +363,7 @@ function initMap() {
     map.on('baselayerchange', e => { try { localStorage.setItem('mapBase', e.name); } catch { /* yok */ } });
     map.on('overlayadd overlayremove', e => { if (e.layer === seamarks) try { localStorage.setItem('seamarks', e.type === 'overlayadd' ? '1' : '0'); } catch { /* yok */ } });
     const addAt = e => { if (Date.now() - lastMenuAt > 1200) openSpotDialog(null, e.latlng); };
-    map.on('contextmenu', addAt);
-    map.on('dblclick', addAt);
+    map.on('contextmenu', addAt); // boş yere basılı tut = yeni mera (çift dokunma = yakınlaştır)
     map.on('click', e => mapPointPopup(e.latlng));
     // Uzaklaştırınca isim etiketlerini gizle (üst üste binmesin)
     const farCheck = () => map.getContainer().classList.toggle('map-far', map.getZoom() < 11);
@@ -377,7 +427,7 @@ function renderMapMarkers() {
     const info = rankInfo.get(s.id);
     // Yuvarlakta puan (uzaktan okunur), sol üst köşede sıra numarası
     const html = `<div class="mk"><span class="mk-dot" style="background:${info ? scoreColor(info.score) : 'var(--muted)'}">${info ? fmt(info.score, 1) : '•'}</span>` +
-      `${info ? `<span class="mk-rank">${info.rank}</span>` : ''}<span class="mk-name">${esc(s.name)}</span></div>`;
+      `${info ? `<span class="mk-rank">${info.rank}</span>` : ''}<span class="mk-name">${esc(s.name)}${(() => { const n = catchesAt({ ...s, key: s.id }).length; return n ? ` · 🐟${n}` : ''; })()}</span></div>`;
     const marker = L.marker([s.lat, s.lng], {
       icon: L.divIcon({ className: 'mk-wrap', html, iconSize: [42, 42], iconAnchor: [21, 21] }),
       zIndexOffset: info ? 1000 - info.rank : 0, title: s.name,
@@ -388,6 +438,9 @@ function renderMapMarkers() {
   }
   for (const c of state.catches) {
     if (c.lat == null) continue;
+    const sp = c.spotId && spotById(c.spotId);
+    if (sp && distM(c, sp) < 150) continue; // meranın kendi işaretinde gösteriliyor
+    if (!sp && state.spots.some(x => Number.isFinite(x.lat) && distM(c, x) < 150)) continue; // meranın üstüne binmesin
     const m = L.marker([c.lat, c.lng], { icon: L.divIcon({ className: 'fish-marker', html: findSpecies(c.species)?.emoji || '🐟', iconSize: [22, 22] }) });
     const url = photoUrl(c);
     m.bindPopup(`${url ? `<img src="${url}" style="width:160px;border-radius:8px;display:block;margin-bottom:4px">` : ''}
@@ -774,10 +827,18 @@ async function renderRank(force = false) {
           <span class="rank-meta">${esc(summaryLine(r, a.type))}</span>
           ${miniWx(a, r.date)}
           <span class="rank-meta">🐟 ${esc(sp)}</span>
+          ${catchLine(a.place)}
           <span class="rank-why">${top}</span>
         </span></button>`;
     }).join('') +
     bad.map(x => `<div class="card"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
+}
+
+function catchLine(place) {
+  const list = catchesAt(place);
+  if (!list.length) return '';
+  const sm = catchSummary(list);
+  return `<span class="rank-meta catch-line">📒 Bu merada ${sm.n} balık${sm.species ? ` · en çok ${esc(sm.species)}` : ''}${sm.bait ? ` · ${esc(sm.bait)}` : ''}</span>`;
 }
 
 function tripCard(x, i) {
@@ -796,6 +857,7 @@ function tripCard(x, i) {
       <span class="rank-meta">${esc(summaryLine(b, a.type))}</span>
       ${miniWx(a, t.list[0].date)}
       <span class="rank-meta">🐟 ${esc(sp)}</span>
+      ${catchLine(a.place)}
     </span></button>`;
 }
 
@@ -972,9 +1034,28 @@ function renderDetail() {
   const C1 = 'var(--s1)', C2 = 'var(--s2)';
   const tm = d => (d ? fmtTime(d) : '—');
 
-  const TABS = [['hourly', '⏱️ Saatlik'], ['species', '🐟 Türler'], ['charts', '📈 Grafikler'], ['detail', '🌤️ Ayrıntı']];
+  const myCatches = catchesAt(place);
+  const TABS = [['hourly', '⏱️ Saatlik'], ['catches', `📒 Avlarım (${myCatches.length})`], ['species', '🐟 Türler'], ['charts', '📈 Grafikler'], ['detail', '🌤️ Ayrıntı']];
   const tab = TABS.some(([k]) => k === detail.tab) ? detail.tab : 'hourly';
   const tabHtml = {
+    catches: () => {
+      if (!myCatches.length) return `<div class="empty"><span class="big">📒</span>Bu merada henüz kayıtlı av yok.<br>Av eklerken "Mera" kısmından bu merayı seçin.</div>
+        ${spotById(place.key || place.id) ? `<div class="popup-actions big"><button data-act="catch-spot" data-id="${esc(place.key || place.id)}">＋ Bu meraya av ekle</button></div>` : ''}`;
+      const sm = catchSummary(myCatches);
+      return `<div class="tiles">
+          <div class="tile"><div class="label">Toplam balık</div><div class="value">${sm.n}</div><div class="sub">${myCatches.length} kayıt</div></div>
+          <div class="tile"><div class="label">En çok</div><div class="value" style="font-size:1.15rem">${esc(sm.species || '—')}</div><div class="sub">tür</div></div>
+          <div class="tile"><div class="label">En iyi yem</div><div class="value" style="font-size:1.15rem">${esc(sm.bait || '—')}</div><div class="sub">bu merada</div></div>
+          <div class="tile"><div class="label">En verimli saat</div><div class="value">${sm.hour != null ? String(sm.hour).padStart(2, '0') + ':00' : '—'}</div><div class="sub">${sm.biggest ? `en büyük ${esc(sm.biggest.species)} ${sm.biggest.length} cm` : ''}</div></div>
+        </div>
+        <div class="catch-list">${myCatches.map(c => {
+          const url = photoUrl(c);
+          return `<button class="catch-item" data-catch="${c.id}">${url ? `<img class="catch-thumb" src="${url}" alt="">` : `<div class="catch-thumb">${findSpecies(c.species)?.emoji || '🐟'}</div>`}
+            <div class="catch-body"><div class="catch-title">${esc(c.species)}${c.count > 1 ? ` <span class="tag">×${c.count}</span>` : ''}${c.released ? '<span class="tag">salındı</span>' : ''}</div>
+            <div class="catch-meta">${esc([fmtDate(c.date), fmtTime(c.date), c.length && c.length + ' cm', c.bait].filter(Boolean).join(' · '))}</div></div></button>`;
+        }).join('')}</div>
+        ${spotById(place.key || place.id) ? `<div class="popup-actions big"><button data-act="catch-spot" data-id="${esc(place.key || place.id)}">＋ Bu meraya av ekle</button></div>` : ''}`;
+    },
     hourly: () => `    <div class="card now-card">
       <div class="now-ico">${weatherIcon(sel.code, sel.isDay)}</div>
       <div class="now-main"><div class="now-t">${fmt(sel.temp)}°<small> hissedilen ${fmt(sel.feels)}°</small></div>
@@ -1124,6 +1205,8 @@ async function onDetailClick(e) {
   }
   const h = e.target.closest('.hour[data-t]');
   if (h) { detail.sel = detail.a.rows.find(r => r.date.getTime() === +h.dataset.t); renderDetail(); return; }
+  const ci = e.target.closest('[data-catch]');
+  if (ci) { openCatchDialog(state.catches.find(c => c.id === ci.dataset.catch)); return; }
   const dt = e.target.closest('[data-dtab]');
   if (dt) { detail.tab = dt.dataset.dtab; renderDetail(); return; }
   const sl = e.target.closest('[data-slot]');
@@ -1377,7 +1460,7 @@ function bindEvents() {
     if (!b) return;
     const { act, id } = b.dataset;
     map?.closePopup();
-    if ((act === 'edit-spot' || act === 'catch-spot') && $('#wx-dialog').open) $('#wx-dialog').close();
+    if (act === 'edit-spot' && $('#wx-dialog').open) $('#wx-dialog').close();
     if (act === 'edit-spot') openSpotDialog(spotById(id));
     if (act === 'edit-catch') openCatchDialog(state.catches.find(c => c.id === id));
     if (act === 'catch-spot') openCatchDialog(null, { spotId: id });
@@ -1479,10 +1562,8 @@ function bindEvents() {
 
 // ————————————————— Başlat —————————————————
 async function init() {
-  $('#species-list').innerHTML = SPECIES.map(s => `<option value="${esc(s.name)}">`).join('');
-  $('#bait-list').innerHTML = BAITS.map(b => `<option value="${esc(b)}">`).join('');
-  $('#method-list').innerHTML = METHODS.map(m => `<option value="${esc(m)}">`).join('');
   bindEvents();
+  bindSugg();
   setupSheet();
   setupInstallHint();
   await loadData();
