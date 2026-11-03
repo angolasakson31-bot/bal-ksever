@@ -389,7 +389,7 @@ function renderMapMarkers() {
     const html = `<div class="mk${s.id === selKey ? ' sel' : ''}"><span class="mk-dot" style="background:${info ? scoreColor(info.score) : 'var(--muted)'}">${info ? fmt(info.score, 1) : '•'}</span>` +
       `${info ? `<span class="mk-rank">${info.rank}</span>` : ''}<span class="mk-name">${esc(s.name)}${(() => { const n = catchesAt({ ...s, key: s.id }).length; return n ? ` · 🐟${n}` : ''; })()}</span></div>`;
     const marker = L.marker([s.lat, s.lng], {
-      icon: L.divIcon({ className: 'mk-wrap', html, iconSize: [42, 42], iconAnchor: [21, 21] }),
+      icon: L.divIcon({ className: 'mk-wrap', html, iconSize: [34, 34], iconAnchor: [17, 17] }),
       zIndexOffset: info ? 1000 - info.rank : 0, title: s.name,
     });
     marker.on('click', () => {
