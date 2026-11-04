@@ -1285,7 +1285,11 @@ function renderDetail() {
   const ahead = dayRows.filter(r => r.date.getTime() >= Date.now() - 3600e3);
   const pool = ahead.length ? ahead : dayRows;
   const advice = adviceText({ dayRows: pool, sel, type, place });
-  const best = [...pool].sort((x, y) => modeVal(y) - modeVal(x)).slice(0, 3).sort((x, y) => x.date - y.date);
+  // En iyi puanlar: yüksekten düşüğe; tehlikeli saatler hariç; 3. sıradaki puanla eşit olanlar da (en fazla 6)
+  const safePool = pool.filter(r => !r.danger).length ? pool.filter(r => !r.danger) : pool;
+  const ranked = [...safePool].sort((x, y) => (modeVal(y) - modeVal(x)) || (x.date - y.date));
+  const cut = ranked[Math.min(2, ranked.length - 1)] ? Math.round(modeVal(ranked[Math.min(2, ranked.length - 1)]) * 10) : 0;
+  const best = ranked.filter((r, i) => i < 3 || Math.round(modeVal(r) * 10) >= cut).slice(0, 6);
   const C1 = 'var(--s1)', C2 = 'var(--s2)';
   const tm = d => (d ? fmtTime(d) : '—');
 
@@ -1358,9 +1362,9 @@ function renderDetail() {
       <p class="chart-note">Simge: o saatin <b>en olası</b> havası (🌫️ = sis). Mavi sütun ve 💧%: yağmur <b>ihtimali</b>. %50 üstü büyük ihtimalle yağar, %20–50 yağabilir. mm: yağarsa miktarı. Simge yağmur göstermese de ihtimal yüksekse köşesine 💧 eklenir. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
     </div>
 
-    <div class="card"><h3>Günün en iyi saatleri</h3><ul class="best-list">
-      ${best.map(r => `<li><span>${hh(r.date)} ${r.danger ? '⚠️' : ''}</span><b class="${scoreClass(modeVal(r))}">${fmt(modeVal(r), 1)}</b></li>`).join('')}
-    </ul></div>
+    <div class="card"><h3>Günün en iyi saatleri <small class="muted">(en yüksek puandan)</small></h3><ul class="best-list">
+      ${best.map((r, i) => `<li${i === 0 ? ' class="top"' : ''}><span>${i === 0 ? '🏆 ' : ''}${hh(r.date)} ${r.danger ? '⚠️' : ''}</span><b class="${scoreClass(modeVal(r))}">${fmt(modeVal(r), 1)}</b></li>`).join('')}
+    </ul>${detail.day === new Date().toDateString() && ahead.length && ahead.length < 6 ? '<p class="chart-note">Bugün az saat kaldı; yarını görmek için üstten günü değiştir.</p>' : ''}</div>
 
 `,
     species: () => `    <div class="card"><h3>🐟 Türlere göre tahmin (${hh(sel.date)})</h3>
