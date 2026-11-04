@@ -1642,6 +1642,7 @@ function renderMore() {
       <p class="muted">Rastgele v1 · Kıyı balıkçıları için av günlüğü. Harita: © OpenStreetMap katkıcıları. Hava: Open-Meteo.</p>
     </div>`,
   };
+  setTimeout(fillMembers, 0);
   $('#more-content').innerHTML = `<div class="dtabs more-tabs">${TABS.map(([k, l]) => `<button data-more="${k}" class="${k === moreTab ? 'active' : ''}">${l}</button>`).join('')}</div>${body[moreTab]()}`;
 }
 
@@ -1660,6 +1661,7 @@ async function setupGroup() {
   document.body.classList.add('group-mode');
   $('#group-bar').hidden = false;
   await grp.enterGroup(code, onGroupEvent);
+  grp.hello(true);
   renderGroupBar();
   updateTopH();
 }
@@ -1699,7 +1701,8 @@ function groupCard() {
     <br><small class="muted">Adın: <b>${esc(grp.myName(x.code) || '—')}</b> <button class="link-btn" data-gact="name" data-code="${x.code}">değiştir</button></small></span>
     <span class="row">${x.code === g.code ? '' : `<button class="btn small" data-gact="open" data-code="${x.code}">Aç</button>`}
     <button class="btn small" data-gact="share" data-code="${x.code}">📋 Link</button>
-    <button class="btn small danger" data-gact="leave" data-code="${x.code}">Çık</button></span></div>`;
+    <button class="btn small danger" data-gact="leave" data-code="${x.code}">Çık</button></span>
+    <details class="members" data-members="${x.code}"${x.code === g.code ? ' open' : ''}><summary>👥 Gruptakiler</summary><div class="mem-list">yükleniyor…</div></details></div>`;
   return `<div class="card"><h3>👥 Arkadaş grubu</h3>
     <p class="group-what"><b>Ne işe yarar?</b> Arkadaşlarınla <b>ortak mera ve av defteri</b>. Biri mera ya da av eklediğinde hepiniz görürsünüz.</p>
     <ol class="group-steps"><li>Aşağıya grup adını yaz, <b>Oluştur</b>'a bas.</li><li>Link kopyalanır; WhatsApp grubunuza yapıştırın (sonra da <b>📋 Link</b> ya da üstteki <b>📋 Davet</b> ile kopyalayabilirsin).</li><li>Linke giren herkes aynı meraları ve avları görür, ekler, düzenler.</li></ol>
@@ -1710,6 +1713,23 @@ function groupCard() {
 }
 
 // Davet: sadece grup linkini kopyala (WhatsApp'a yönlendirme yok); kullanıcı istediği yere yapıştırır
+// Ayarlar: her grubun üyeleri (ad, eklediği mera/av, son görülme)
+const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 2 ? 'şimdi' : m < 60 ? `${m} dk önce` : m < 1440 ? `${Math.round(m / 60)} sa önce` : `${Math.round(m / 1440)} gün önce`; };
+async function fillMembers() {
+  for (const el of document.querySelectorAll('[data-members]')) {
+    const box = el.querySelector('.mem-list');
+    const info = await grp.groupInfo(el.dataset.members);
+    if (!el.isConnected) continue;
+    if (!info) { box.textContent = 'Sunucuya ulaşılamadı (uyuyor olabilir), biraz sonra tekrar bak.'; continue; }
+    const me = grp.deviceId();
+    const list = info.members || [];
+    el.querySelector('summary').textContent = `👥 Gruptakiler (${list.length})`;
+    box.innerHTML = list.length ? list.map(m => `<div class="mem"><span class="mem-av">${esc((m.name || '?').slice(0, 1).toUpperCase())}</span>
+      <span class="mem-main"><b>${esc(m.name)}</b>${m.id === me ? ' <span class="tag">sen</span>' : ''}<br><small class="muted">📍 ${m.spots} mera · 🐟 ${m.catches} av · ${ago(m.lastSeen)}</small></span></div>`).join('')
+      : '<span class="muted">Henüz kimse görünmüyor. Linke girenler burada listelenir.</span>';
+  }
+}
+
 async function shareGroup(code, name) {
   const url = grp.groupLink(code);
   let ok = false;

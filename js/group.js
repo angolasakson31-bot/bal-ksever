@@ -23,6 +23,7 @@ export function setMyName(n, code = group.code) {
   if (!v) return;
   lsSet('myName', v);
   if (code) { const m = groupNames(); m[code] = v; lsSet('groupNames', JSON.stringify(m)); }
+  if (code && code === group.code) { lastHello = 0; hello(true); }
 }
 
 const CODE_RE = /^[A-Za-z0-9]{16,40}$/;
@@ -47,6 +48,20 @@ async function api(path, opts = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body.error || `Sunucu hatası (${res.status})`), { status: res.status });
   return body;
+}
+
+// Bu telefonun kimliği (üye listesinde "sen" işareti ve isim değişince aynı kişi kalsın diye)
+export function deviceId() {
+  let id = ls('deviceId');
+  if (!id || !/^[A-Za-z0-9-]{8,40}$/.test(id)) { id = (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/[^A-Za-z0-9-]/g, ''); lsSet('deviceId', id); }
+  return id;
+}
+// "Buradayım": üye listesinde görünmek ve son görülme için
+let lastHello = 0;
+export async function hello(force = false) {
+  if (!group.code || !myName() || (!force && Date.now() - lastHello < 5 * 60e3)) return;
+  lastHello = Date.now();
+  try { await api(`/api/g/${group.code}/members`, { method: 'POST', body: JSON.stringify({ id: deviceId(), name: myName() }) }); } catch { lastHello = 0; }
 }
 
 // Grup adı (katılırken isim sorulmadan önce; sunucu uyuyorsa en fazla 4 sn beklenir)
@@ -174,6 +189,7 @@ export function sync() {
       await flush();
       const { changed, fresh } = await pull();
       group.online = true; group.lastSync = Date.now();
+      hello();
       listener({ changed, fresh });
     } catch (e) {
       group.online = false;
