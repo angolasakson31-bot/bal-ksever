@@ -822,3 +822,8 @@ body.group-mode .topbar { background: #155e3a; }
 .radar-bar #radar-time { white-space: nowrap; font-weight: 600; }
 .radar-bar input[type=range] { flex: 1; min-width: 80px; padding: 0; border: 0; background: none; accent-color: #3987e5; }
 .radar-credit { flex-basis: 100%; font-size: .56rem; opacity: .75; margin-top: -2px; }
+
+/* Konum kartı kesilmesin; ipucu bir kez kaydırınca her yerde gizlensin */
+.here-card .rank-item { max-height: none; overflow: visible; }
+body.wxhint-off .here-card .wx-hint { display: none; }
+.mini-wx .mr { white-space: nowrap; letter-spacing: -.2px; }
