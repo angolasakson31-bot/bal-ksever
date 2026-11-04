@@ -14,8 +14,16 @@ export const groupReady = () => !!apiUrl();
 export const photoReady = () => { const c = cloud(); return !!(c.cloud && c.preset); };
 
 export const group = { code: null, name: null, online: false, pending: 0, lastSync: 0 };
-export const myName = () => ls('myName') || '';
-export const setMyName = n => lsSet('myName', n.trim().slice(0, 30));
+// İsim her grup için ayrı saklanır (bir grupta 'Ahmet', diğerinde 'Kaptan' olabilir)
+function groupNames() { try { return JSON.parse(ls('groupNames') || '{}'); } catch { return {}; } }
+export const myName = (code = group.code) => (code ? groupNames()[code] : '') || '';
+export const lastName = () => ls('myName') || ''; // son kullanılan isim (yeni grupta öneri)
+export function setMyName(n, code = group.code) {
+  const v = n.trim().slice(0, 30);
+  if (!v) return;
+  lsSet('myName', v);
+  if (code) { const m = groupNames(); m[code] = v; lsSet('groupNames', JSON.stringify(m)); }
+}
 
 const CODE_RE = /^[A-Za-z0-9]{16,40}$/;
 export const codeFromUrl = () => { const c = new URLSearchParams(location.search).get('grup'); return c && CODE_RE.test(c) ? c : null; };
@@ -30,6 +38,7 @@ function rememberGroup(code, name) {
 }
 export async function leaveGroup(code) {
   lsSet('groups', JSON.stringify(joinedGroups().filter(g => g.code !== code)));
+  const m = groupNames(); delete m[code]; lsSet('groupNames', JSON.stringify(m));
   await db.deleteDatabase('rastgele-g-' + code);
 }
 
@@ -40,9 +49,14 @@ async function api(path, opts = {}) {
   return body;
 }
 
-export async function createGroup(name) {
-  const r = await api('/api/groups', { method: 'POST', body: JSON.stringify({ name, by: myName() }) });
+// Grup adı (katılırken isim sorulmadan önce; sunucu uyuyorsa en fazla 4 sn beklenir)
+export async function groupInfo(code) {
+  try { return await Promise.race([api(`/api/g/${code}`), new Promise(r => setTimeout(() => r(null), 4000))]); } catch { return null; }
+}
+export async function createGroup(name, by) {
+  const r = await api('/api/groups', { method: 'POST', body: JSON.stringify({ name, by }) });
   rememberGroup(r.code, r.name);
+  if (by) setMyName(by, r.code);
   return r;
 }
 

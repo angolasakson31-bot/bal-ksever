@@ -224,12 +224,20 @@
   </dialog>
 
   <!-- Ana ekrana ekleme talimatı -->
+  <!-- Fotoğraf büyük görünüm -->
+  <dialog id="photo-view" class="photo-view" aria-label="Fotoğraf">
+    <img id="photo-img" alt="">
+    <div id="photo-cap" class="photo-cap"></div>
+    <div class="photo-close">✕ Kapatmak için dokun</div>
+  </dialog>
+
   <!-- Ad sorma -->
   <dialog id="name-dialog" class="sheet">
     <form id="name-form" method="dialog">
       <h2 id="name-title">Adın ne?</h2>
-      <p class="muted">Eklediğin meralarda ve avlarda gruptakiler bu adı görür.</p>
+      <p class="muted" id="name-note">Eklediğin meralarda ve avlarda gruptakiler bu adı görür.</p>
       <input id="name-input" maxlength="30" placeholder="Ör. Ahmet ya da lakabın" autocomplete="nickname" enterkeyhint="done">
+      <p class="warn" id="name-error" hidden>Lütfen en az 2 harfli bir ad yaz.</p>
       <div class="row" style="margin-top:10px">
         <button type="button" class="btn" id="name-cancel">Vazgeç</button>
         <button type="submit" class="btn primary" style="flex:1">Kaydet</button>
