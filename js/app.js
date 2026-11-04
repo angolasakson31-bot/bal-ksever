@@ -447,11 +447,13 @@ async function placeName(lat, lng) {
     const area = [ad.town || ad.city_district || ad.county, ad.province || ad.state].filter(x => x && x !== main).join(', ');
     return main ? { name: main, area } : null;
   };
-  try {
-    const nat = pick(await (await fetch(url('natural'))).json());
-    if (nat) return nat;
-    return pick(await (await fetch(url(''))).json());
-  } catch { return null; }
+  const get = async u => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 3000);
+    try { return pick(await (await fetch(u, { signal: ctl.signal })).json()); } catch { return null; } finally { clearTimeout(t); }
+  };
+  // Su adı (göl, koy…) ile genel adres aynı anda; önce su adı
+  const [nat, gen] = await Promise.all([get(url('natural')), get(url(''))]);
+  return nat || gen;
 }
 
 function fitAll() {
@@ -684,7 +686,7 @@ function openSpotDialog(s, latlng, water, name = '') {
 async function showAutoWater(lat, lng) {
   const opt = $('#spot-water option[value="auto"]');
   opt.textContent = 'Otomatik algıla (bakılıyor…)';
-  const g = await detectWater(lat, lng).catch(() => null);
+  const g = await detectWater(lat, lng, { urgent: true }).catch(() => null);
   if (editingSpot?.lat !== lat || editingSpot?.lng !== lng) return;
   opt.textContent = g && !g.noWater
     ? `Otomatik: ${WATER_TYPES[g.type].icon} ${WATER_TYPES[g.type].label}${g.name ? ` · ${g.name}` : ''}`
@@ -733,24 +735,26 @@ async function shoreFor(place) {
 
 let waterT = null;
 function waterFound() { clearTimeout(waterT); waterT = setTimeout(() => { if (state.tab === 'map') renderRank(); }, 1500); }
-async function analyze(place, opts) {
-  // Su tipi "otomatik" ise önce haritadaki suya bak (körfez/göl/dere); deniz çıkarsa kıyıdan en yakın deniz verisi alınır
+async function analyze(place, opts = {}) {
+  // Hava, su tipi (göl/deniz/dere) ve kıyı yönü AYNI ANDA istenir; birbirini beklemez.
   const auto = !place.water || place.water === 'auto';
-  // Bulunmuşsa hemen kullan; bulunmamışsa arka planda bul, bitince sıralamayı yenile (liste beklemesin)
-  let guess = auto ? cachedWater(place.lat, place.lng) : null;
-  if (auto && !guess) {
-    if (opts?.waitWater) {
-      const p = detectWater(place.lat, place.lng).catch(() => null);
-      guess = await Promise.race([p, new Promise(r => setTimeout(() => r(undefined), 5000))]);
-      if (guess === undefined) { guess = null; p.then(g => { if (g) { waterFound(); if (place.key === 'here' && !$('#here-card').hidden) toggleHereCard(true); } }); }
-    }
-    else detectWater(place.lat, place.lng).then(g => { if (g) waterFound(); }).catch(() => {});
-  }
-  const wantSea = place.water === 'sea' || guess?.type === 'sea';
-  const [cond, shoreInfo] = await Promise.all([
-    getConditions(place.lat, place.lng, { ...opts, wantSea }),
+  let guess = auto ? cachedWater(place.lat, place.lng) : null; // önceden bulunduysa hemen
+  const isSpot = !!(spotById(place.key) || spotById(place.id));
+  const waterP = auto && !guess ? detectWater(place.lat, place.lng, { urgent: !!opts.waitWater }).catch(() => null) : null;
+  const wantSea0 = place.water === 'sea' || guess?.type === 'sea';
+  const [cond0, shoreInfo] = await Promise.all([
+    getConditions(place.lat, place.lng, { ...opts, wantSea: wantSea0 }),
     shoreFor(place).catch(() => null),
   ]);
+  let cond = cond0;
+  if (waterP) {
+    // Hava geldi; su tipi için en fazla 2.5 sn daha bekle (waitWater), gelmezse sonra haber ver
+    const g = opts.waitWater ? await Promise.race([waterP, new Promise(r => setTimeout(() => r(undefined), 1200))]) : undefined;
+    if (g !== undefined) guess = g;
+    else waterP.then(g2 => { if (!g2) return; if (isSpot) waterFound(); opts.onWater?.(g2); });
+  }
+  // Su tipi deniz çıktı ama noktada dalga verisi yok (kıyı): en yakın deniz verisini al
+  if (guess?.type === 'sea' && !wantSea0 && !cond.seaDetected) cond = await getConditions(place.lat, place.lng, { wantSea: true }).catch(() => cond);
   const type = effectiveType(place, cond, guess);
   const shore = shoreInfo?.bearing ?? null;
   return { place, cond, type, guess, shore, shoreInfo, rows: scoreHours(cond, type, place.lat, place.lng, shore) };
@@ -1025,7 +1029,7 @@ async function toggleHereCard(refresh = false) {
   try {
     const nm = refresh ? null : await Promise.race([placeName(p.lat, p.lng), new Promise(r => setTimeout(() => r(null), 2500))]);
     const place = refresh ? { ...state.hereA.place, water: 'auto' } : { lat: p.lat, lng: p.lng, acc: p.acc, key: 'here', water: 'auto', name: nm?.name || 'Bulunduğun yer' };
-    const a = await analyze(place, { waitWater: true });
+    const a = await analyze(place, { waitWater: true, onWater: () => { if (seq === hereSeq && !$('#here-card').hidden) toggleHereCard(true); } });
     if (seq !== hereSeq) return;
     state.hereA = a;
     const x = cardData(a);
@@ -1446,19 +1450,30 @@ async function onDetailWaterChange(e) {
 // Haritada boş bir noktaya dokununca hızlı özet
 async function mapPointPopup(latlng) {
   const pop = L.popup().setLatLng(latlng).setContent('Hesaplanıyor… 🎣').openOn(map);
-  try {
-    const [nm, a] = await Promise.all([placeName(latlng.lat, latlng.lng), analyze({ lat: latlng.lat, lng: latlng.lng, name: 'Seçilen nokta', water: 'auto' }, { waitWater: true })]);
+  const place = { lat: latlng.lat, lng: latlng.lng, name: 'Seçilen nokta', water: 'auto' };
+  const nameP = placeName(latlng.lat, latlng.lng);
+  let nm = null;
+  const draw = a => {
     const pname = nm?.name || 'Seçilen nokta';
     a.place.name = pname;
     const r = rowAt(a, new Date()) || hourAt(a.rows, new Date());
     const best = a.rows.filter(x => x.date >= new Date() && x.date <= new Date(Date.now() + 864e5)).reduce((b, x) => (!b || x.score > b.score ? x : b), null);
     pop.setContent(`<div class="pt-pop">${nm ? `<div class="pt-name">📍 <b>${esc(nm.name)}</b>${nm.area ? `<br><small>${esc(nm.area)}</small>` : ''}</div>` : ''}
       ${scorePill(r)} <b>${esc(scoreLabel(r.score, r.danger))}</b> ${windBadge(r)}<br>
-      <small>${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label} · şu an</small><br>
+      <small>${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}${a.guess ? '' : ' <i>(su tipi bakılıyor…)</i>'} · şu an</small><br>
       <small>${esc(summaryLine(r, a.type))}</small><br>
       ${best ? `<small>24 saatin en iyisi: <b>${dayShort(best.date)} ${hh(best.date)}</b> (${fmt(best.score, 1)})</small>` : ''}
       <div class="popup-actions"><button data-act="wx-point" data-lat="${latlng.lat}" data-lng="${latlng.lng}" data-name="${esc(pname)}">Ayrıntılı tahmin</button>
       <button data-act="spot-here" data-lat="${latlng.lat}" data-lng="${latlng.lng}" data-name="${esc(nm?.name || '')}">📍 Mera kaydet</button></div></div>`);
+  };
+  try {
+    let last = null;
+    const onWater = async () => { if (!pop.isOpen()) return; try { last = await analyze(place, {}); draw(last); } catch { /* yok */ } };
+    const a = await analyze(place, { waitWater: true, onWater });
+    nm = await Promise.race([nameP, new Promise(r => setTimeout(() => r(null), 800))]); // ad hazırsa ekle
+    if (!pop.isOpen()) return;
+    last = a; draw(a);
+    if (!nm) nameP.then(n => { if (n && pop.isOpen()) { nm = n; draw(last); } });
   } catch (e) { pop.setContent(esc(e.message)); }
 }
 
