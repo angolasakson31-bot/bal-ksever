@@ -1020,14 +1020,13 @@ function spotCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
   const sp = speciesScores(r, a.type).slice(0, 3).map(s => s.name).join(', ');
   return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge(r)}
     <span class="rank-top">
-      <span class="rank-no">${no}</span>
+      <span class="rank-no">${no}</span>${catchBadge(a.place)}
       ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
     </span>
     <span class="rank-name">${state.newIds?.has(a.place.key) ? '<span class="tag new">🆕</span> ' : ''}${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span>${a.place.by ? ` <span class="by">👤 ${esc(a.place.by)}</span>` : ''}</span>
     <span class="rank-time">${a.cond.offline ? `<b class="stale">⚠️ ${hh(new Date(a.cond.fetchedAt))} verisi</b> · ` : ''}${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
     ${miniWx(a, r.date)}
     <span class="rank-meta">🐟 ${esc(sp)}</span>
-    ${catchLine(a.place)}
   </button>`;
 }
 
@@ -1090,11 +1089,12 @@ async function toggleHereCard(refresh = false) {
   }
 }
 
-function catchLine(place) {
+// Kartta küçük rozet: bu meradaki av sayısı (kartın boyunu değiştirmez; ayrıntısı merayı açınca)
+function catchBadge(place) {
   const list = catchesAt(place);
   if (!list.length) return '';
-  const sm = catchSummary(list);
-  return `<span class="rank-meta catch-line">📒 Bu merada ${sm.n} balık${sm.species ? ` · en çok ${esc(sm.species)}` : ''}${sm.bait ? ` · ${esc(sm.bait)}` : ''}</span>`;
+  const n = catchSummary(list).n;
+  return `<span class="fish-badge" title="Bu merada ${n} balık tutuldu">🐟${n}</span>`;
 }
 
 function tripCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
@@ -1104,7 +1104,7 @@ function tripCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
   const sp = speciesScores(b, a.type).slice(0, 3).map(s => s.name).join(', ');
   return `<button class="rank-item" data-key="${esc(a.place.key)}">${windBadge({ ...b, windScore: t.avgWind })}
     <span class="rank-top">
-      <span class="rank-no">${no}</span>
+      <span class="rank-no">${no}</span>${catchBadge(a.place)}
       ${scorePill({ score: x.v })}<span class="rank-lbl">ortalama</span>
     </span>
     <span class="rank-name">${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span></span>
@@ -1113,7 +1113,6 @@ function tripCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
     <span class="trip-axis"><span>${hh(t.list[0].date)}</span><span>${hh(t.list[t.list.length - 1].date)}</span></span>
     <span class="rank-meta">${esc(summaryLine(b, a.type))}</span>
     <span class="rank-meta">🐟 ${esc(sp)}</span>
-    ${catchLine(a.place)}
   </button>`;
 }
 
