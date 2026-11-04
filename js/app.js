@@ -1698,22 +1698,27 @@ function groupCard() {
   const row = x => `<div class="group-row"><span><b>${esc(x.name)}</b>${x.code === g.code ? ' <span class="tag">şu an açık</span>' : ''}
     <br><small class="muted">Adın: <b>${esc(grp.myName(x.code) || '—')}</b> <button class="link-btn" data-gact="name" data-code="${x.code}">değiştir</button></small></span>
     <span class="row">${x.code === g.code ? '' : `<button class="btn small" data-gact="open" data-code="${x.code}">Aç</button>`}
-    <button class="btn small" data-gact="share" data-code="${x.code}">📤 Link</button>
+    <button class="btn small" data-gact="share" data-code="${x.code}">📋 Link</button>
     <button class="btn small danger" data-gact="leave" data-code="${x.code}">Çık</button></span></div>`;
   return `<div class="card"><h3>👥 Arkadaş grubu</h3>
     <p class="group-what"><b>Ne işe yarar?</b> Arkadaşlarınla <b>ortak mera ve av defteri</b>. Biri mera ya da av eklediğinde hepiniz görürsünüz.</p>
-    <ol class="group-steps"><li>Aşağıya grup adını yaz, <b>Oluştur</b>'a bas.</li><li>Çıkan linki WhatsApp grubunuza at.</li><li>Linke giren herkes aynı meraları ve avları görür, ekler, düzenler.</li></ol>
+    <ol class="group-steps"><li>Aşağıya grup adını yaz, <b>Oluştur</b>'a bas.</li><li>Link kopyalanır; WhatsApp grubunuza yapıştırın (sonra da <b>📋 Link</b> ya da üstteki <b>📋 Davet</b> ile kopyalayabilirsin).</li><li>Linke giren herkes aynı meraları ve avları görür, ekler, düzenler.</li></ol>
     <p class="muted">Kendi kişisel kayıtların ayrı kalır, grupla karışmaz.</p>
     ${list.length ? list.map(row).join('') : ''}
     <form id="group-create" class="row" style="margin-top:8px"><input id="group-new-name" placeholder="Yeni grup adı (ör. Bağırganlı Ekibi)" maxlength="40"><button class="btn primary small" type="submit">Oluştur</button></form>
   </div>`;
 }
 
+// Davet: sadece grup linkini kopyala (WhatsApp'a yönlendirme yok); kullanıcı istediği yere yapıştırır
 async function shareGroup(code, name) {
   const url = grp.groupLink(code);
-  const text = `🎣 ${name || 'Balık grubu'} – Rastgele'de ortak meralarımız ve avlarımız: ${url}`;
-  if (navigator.share) { try { await navigator.share({ title: 'Rastgele grup', text, url }); return; } catch { /* vazgeçti */ } }
-  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; } catch {
+    // Eski tarayıcılar: gizli kutudan kopyala
+    try { const t = document.createElement('textarea'); t.value = url; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); ok = document.execCommand('copy'); t.remove(); } catch { /* yok */ }
+  }
+  if (ok) toast(`📋 "${name || 'Grup'}" linki kopyalandı. WhatsApp grubuna yapıştırabilirsin.`, 4000);
+  else prompt('Linki kopyalayın:', url);
 }
 
 async function onGroupAction(act, code) {
@@ -1724,7 +1729,7 @@ async function onGroupAction(act, code) {
       toast('Grup oluşturuluyor… (sunucu uyuyorsa 30 sn sürebilir)', 4000);
       const r = await grp.createGroup(name, by);
       renderMore();
-      if (confirm(`"${r.name}" grubu oluşturuldu! Linki şimdi WhatsApp grubunuza gönderelim mi?`)) await shareGroup(r.code, r.name);
+      await shareGroup(r.code, r.name); // oluşturunca link kopyalanır
     } catch (e) { toast('Grup oluşturulamadı: ' + e.message, 5000); }
   }
   if (act === 'open') location.href = grp.groupLink(code);
