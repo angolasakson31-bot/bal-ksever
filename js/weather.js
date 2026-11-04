@@ -343,9 +343,57 @@ export function classifyOsm(j) {
   if (LAKE_WATER.has(type) || LAKE_WATER.has(water) || (cat === 'landuse' && type === 'reservoir')) return 'lake';
   return null;
 }
+// Overpass (OpenStreetMap): noktanın çevresindeki TÜM suları getir, öncelikle karar ver.
+// Sorun: Nominatim "en yakın tek nesne"yi verir; göle akan dere ya da barajın içinden geçen nehir
+// çoğu zaman gölden "daha yakın" sayılır ve göl yanlışlıkla nehir çıkar.
+// Öncelik: içinde/300 m yakınında göl-baraj-gölet → göl; deniz kıyı çizgisi/körfez/boğaz → deniz;
+// ancak bunlar yoksa 150 m içinde nehir/dere → nehir.
+const OVERPASS = 'https://overpass-api.de/api/interpreter';
+let opQueue = Promise.resolve();
+const opThrottle = fn => { const p = opQueue.then(fn, fn); opQueue = p.then(() => sleep(1500), () => sleep(1500)); return p; };
+const isLakeTags = t => (t.natural === 'water' && !['river', 'stream', 'canal', 'ditch', 'drain', 'wastewater', 'lagoon_salt'].includes(t.water)) || t.landuse === 'reservoir' || t.water === 'reservoir' || t.water === 'lake' || t.water === 'pond';
+const isRiverTags = t => ['river', 'stream', 'canal', 'brook'].includes(t.waterway) || (t.natural === 'water' && ['river', 'stream', 'canal'].includes(t.water));
+const isSeaTags = t => t.natural === 'coastline' || t.natural === 'bay' || t.natural === 'strait' || t.place === 'sea' || t.place === 'ocean';
+export function classifyOverpass(elements) {
+  const el = (elements || []).filter(e => e.tags);
+  const inside = el.filter(e => e.type === 'area');            // noktanın içinde olduğu alanlar (is_in)
+  const near = el.filter(e => e.type !== 'area' && !e.tags.waterway); // 300 m içindeki göl/deniz kıyıları
+  const rivers = el.filter(e => e.type !== 'area' && e.tags.waterway); // 150 m içindeki nehir/dere çizgileri
+  const nm = e => e.tags['name:tr'] || e.tags.name || '';
+  // 1) İçinde olduğu alan
+  const inLake = inside.find(e => isLakeTags(e.tags)), inSea = inside.find(e => isSeaTags(e.tags));
+  if (inLake) return { type: 'lake', name: nm(inLake) };
+  if (inSea) return { type: 'sea', name: nm(inSea) };
+  // 2) Yakındaki göl/baraj (dere aksa bile göl), sonra deniz, en son nehir
+  const lake = near.find(e => isLakeTags(e.tags));
+  const sea = near.find(e => isSeaTags(e.tags));
+  // Deniz de yakınsa: adı olan göl (ör. Küçükçekmece) göl; adsız küçük gölet denizi ezmesin
+  if (lake && (!sea || nm(lake))) return { type: 'lake', name: nm(lake) };
+  if (sea) return { type: 'sea', name: nm(sea) };
+  const river = rivers.find(e => isRiverTags(e.tags)) || near.find(e => isRiverTags(e.tags));
+  if (river) return { type: 'river', name: nm(river) };
+  return null;
+}
+async function overpassWater(lat, lng) {
+  const p = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const q = `[out:json][timeout:15];
+is_in(${p})->.a;
+(area.a[natural=water];area.a[landuse=reservoir];area.a[natural=bay];area.a[natural=strait];area.a[place=sea];);
+out tags;
+(way(around:300,${p})[natural=water];relation(around:300,${p})[natural=water];
+way(around:300,${p})[landuse=reservoir];relation(around:300,${p})[landuse=reservoir];
+way(around:300,${p})[natural=coastline];
+way(around:600,${p})[natural~"^(bay|strait)$"];relation(around:600,${p})[natural~"^(bay|strait)$"];);
+out tags;
+way(around:150,${p})[waterway~"^(river|stream|canal|brook)$"];
+out tags;`;
+  const j = await opThrottle(() => getJson(`${OVERPASS}?data=${encodeURIComponent(q)}`, 2));
+  return classifyOverpass(j.elements);
+}
+
 // Daha önce bulunduysa hemen döndür (beklemeden)
 export function cachedWater(lat, lng) {
-  try { const c = JSON.parse(localStorage.getItem('wt2:' + key(lat, lng))); return c?.type ? c : null; } catch { return null; }
+  try { const c = JSON.parse(localStorage.getItem('wt3:' + key(lat, lng))); return c?.type ? c : null; } catch { return null; }
 }
 const pendingWater = new Map();
 export function detectWater(lat, lng) {
@@ -354,10 +402,14 @@ export function detectWater(lat, lng) {
   return pendingWater.get(k);
 }
 async function detectWaterNow(lat, lng) {
-  const ck = 'wt2:' + key(lat, lng);
+  const ck = 'wt3:' + key(lat, lng);
   try { const c = JSON.parse(localStorage.getItem(ck)); if (c?.type) return c; } catch { /* yok */ }
   let res = null;
   try {
+    const o = await overpassWater(lat, lng);
+    if (o) res = { ...o, source: 'osm' };
+  } catch { /* Overpass yoğun/erişilemez: Nominatim'e bak */ }
+  if (!res) try {
     const j = await nomThrottle(() => getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&layer=natural&extratags=1&accept-language=tr`));
     const t = classifyOsm(j);
     if (t) res = { type: t, source: 'osm', name: j.name || j.address?.water || '' };
