@@ -827,3 +827,30 @@ body.group-mode .topbar { background: #155e3a; }
 .here-card .rank-item { max-height: none; overflow: visible; }
 body.wxhint-off .here-card .wx-hint { display: none; }
 .mini-wx .mr { white-space: nowrap; letter-spacing: -.2px; }
+
+/* Grup modunda üst başlık + grup şeridi tek satır */
+body.group-mode .topbar { display: none; }
+body.group-mode .group-bar { top: 0; padding-top: calc(env(safe-area-inset-top) + 7px); padding-bottom: 7px; font-size: .9rem; }
+body.group-mode .group-bar .gb-btn { padding: 4px 10px; font-size: .75rem; }
+
+/* Eski veri uyarısı, karada su yok */
+.stale { color: #e0a100; font-weight: 700; }
+.here-card .rank-item.nowater { gap: 3px; }
+.here-card .rank-item.nowater .rank-meta { white-space: normal; font-size: .72rem; line-height: 1.35; }
+
+/* Kart yazıları biraz daha okunur (kart boyutu aynı) */
+.carousel .rank-name, .here-card .rank-name { font-size: .84rem; }
+.carousel .rank-time, .carousel .rank-meta, .carousel .catch-line,
+.here-card .rank-time, .here-card .rank-meta, .here-card .catch-line { font-size: .7rem; }
+.carousel .mini-wx .mc, .here-card .mini-wx .mc { font-size: .6rem; padding: 2px 0; }
+.carousel .mini-wx .mi, .here-card .mini-wx .mi { font-size: .82rem; }
+.carousel .mini-wx .mtp, .here-card .mini-wx .mtp { font-size: .7rem; }
+.carousel .mini-wx .ms, .here-card .mini-wx .ms { font-size: .58rem; min-width: 22px; }
+.carousel .wx-hint, .here-card .wx-hint { font-size: .58rem; }
+.carousel .rank-top .score-pill, .here-card .rank-top .score-pill { font-size: .82rem; }
+.carousel .rank-lbl, .here-card .rank-lbl { font-size: .68rem; }
+.carousel .rank-item .wind-badge, .here-card .rank-item .wind-badge { font-size: .62rem; }
+.carousel .rank-item { max-height: 220px; }
+#name-dialog input { margin-top: 6px; }
+/* Boş/uyarı kartında kalın kelimeler satır bölmesin */
+.carousel .rank-item.empty, .here-card .rank-item.empty { display: block; }
