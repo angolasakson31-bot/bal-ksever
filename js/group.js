@@ -112,12 +112,20 @@ async function flush() {
     } else {
       let doc = await db.get(q.store, q.id);
       if (!doc) { await db.remove('outbox', q.k, { silent: true }); continue; }
-      if (q.store === 'catches' && doc.photo instanceof Blob && !doc.photoUrl && photoReady()) {
-        const url = await uploadPhoto(doc.photo, doc.id);
-        doc = { ...doc, photoUrl: url };
-        await db.put('catches', doc, { silent: true });
+      if (q.store === 'catches' && photoReady()) {
+        // Tüm fotoğraflar: internete yüklenmemiş olanları yükle (eski tek fotoğraflı kayıtlar da)
+        let photos = Array.isArray(doc.photos) && doc.photos.length ? doc.photos
+          : (doc.photo || doc.photoUrl ? [{ id: 'p0', blob: doc.photo || null, url: doc.photoUrl || null }] : []);
+        let changed = false;
+        photos = await Promise.all(photos.map(async p => {
+          if (p.blob instanceof Blob && !p.url) { changed = true; return { ...p, url: await uploadPhoto(p.blob, `${doc.id}-${p.id}`) }; }
+          return p;
+        }));
+        if (changed) { doc = { ...doc, photos, photoUrl: photos[0]?.url || null }; await db.put('catches', doc, { silent: true }); }
       }
-      const { photo, ...rest } = doc;
+      const { photo, ...rest0 } = doc;
+      // Sunucuya fotoğraf dosyası değil, yalnız adresleri gider
+      const rest = Array.isArray(rest0.photos) ? { ...rest0, photos: rest0.photos.map(({ blob, ...p }) => p).filter(p => p.url) } : rest0;
       await api(`/api/g/${group.code}/${q.store}/${encodeURIComponent(q.id)}`, { method: 'PUT', body: JSON.stringify({ doc: rest, by: myName() }) });
     }
     // Bu arada aynı kayıt yeniden değiştiyse sıradan silme
@@ -143,6 +151,10 @@ async function pull() {
       if (local && local.updatedAt === it.updatedAt) continue; // zaten güncel
       const doc = { ...it.doc, by: it.createdBy || it.by, editedBy: it.by, updatedAt: it.updatedAt };
       if (local?.photo && doc.photoUrl === local.photoUrl) doc.photo = local.photo; // fotoğraf dosyası telefonda dursun
+      if (Array.isArray(doc.photos) && Array.isArray(local?.photos)) {
+        const mine = new Map(local.photos.filter(p => p.blob).map(p => [p.id, p]));
+        doc.photos = doc.photos.map(p => (mine.get(p.id)?.url === p.url ? { ...p, blob: mine.get(p.id).blob } : p));
+      }
       await db.put(it.store, doc, { silent: true });
       changed = true;
       if (!first && it.by && it.by !== myName()) fresh.push({ ...it, doc, isNew: !local });

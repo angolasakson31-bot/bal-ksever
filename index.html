@@ -107,11 +107,8 @@
     <form id="catch-form" method="dialog">
       <h2 id="catch-dialog-title">Yeni Av</h2>
 
-      <label class="photo-pick">
-        <input type="file" id="catch-photo" accept="image/*" hidden>
-        <img id="catch-photo-preview" alt="" hidden>
-        <span id="catch-photo-label">📷 Fotoğraf ekle</span>
-      </label>
+      <div id="catch-photos" class="photo-edit"></div>
+      <p class="muted small-note" id="catch-photo-count"></p>
 
       <label>Tür
         <input id="catch-species" required placeholder="Yazın veya aşağıdan seçin" autocomplete="off">
@@ -226,9 +223,11 @@
   <!-- Ana ekrana ekleme talimatı -->
   <!-- Fotoğraf büyük görünüm -->
   <dialog id="photo-view" class="photo-view" aria-label="Fotoğraf">
+    <button type="button" class="pv-nav" id="pv-prev" aria-label="Önceki">‹</button>
+    <button type="button" class="pv-nav" id="pv-next" aria-label="Sonraki">›</button>
     <img id="photo-img" alt="">
     <div id="photo-cap" class="photo-cap"></div>
-    <div class="photo-close">✕ Kapatmak için dokun</div>
+    <div class="photo-close">✕ Kapatmak için dokun · kaydırarak gez</div>
   </dialog>
 
   <!-- Ad sorma -->

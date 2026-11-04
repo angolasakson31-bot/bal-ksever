@@ -23,23 +23,58 @@ function toast(msg, ms = 2500) {
   toast.timer = setTimeout(() => { t.hidden = true; }, ms);
 }
 
-function photoUrl(c) {
-  if (!c.photo) return c.photoUrl || null; // grup kaydı: fotoğraf Cloudinary'de
-  if (!state.photoUrls.has(c.id)) state.photoUrls.set(c.id, URL.createObjectURL(c.photo));
-  return state.photoUrls.get(c.id);
+// Bir avın fotoğrafları: [{ id, blob?, url? }] (blob: telefonda, url: grupta internette)
+// Eski kayıtlarda tek fotoğraf (photo / photoUrl) vardı; listenin ilk fotoğrafı sayılır.
+const MAX_PHOTOS = 6;
+function catchPhotos(c) {
+  if (Array.isArray(c?.photos) && c.photos.length) return c.photos;
+  if (c?.photo || c?.photoUrl) return [{ id: 'p0', blob: c.photo || null, url: c.photoUrl || null }];
+  return [];
 }
-// Küçük resim: dokununca büyük açılır; yüklenemezse balık simgesine döner
-const thumbImg = (url, c) => `<img class="catch-thumb" src="${url}" data-view="${c.id}" alt="${esc(c.species)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;catch-thumb&quot;>🐟</div>'">`;
-function openPhoto(id) {
+function photoSrc(c, p) {
+  if (!p.blob) return p.url || null;
+  const k = `${c.id}:${p.id}`;
+  if (!state.photoUrls.has(k)) state.photoUrls.set(k, URL.createObjectURL(p.blob));
+  return state.photoUrls.get(k);
+}
+const photoUrl = c => { const p = catchPhotos(c)[0]; return p ? photoSrc(c, p) : null; };
+// Küçük resim: dokununca büyük açılır (birden çok fotoğrafta köşede sayı); yüklenemezse balık simgesine döner
+const thumbImg = (url, c) => { const n = catchPhotos(c).length;
+  return `<span class="thumb-wrap"><img class="catch-thumb" src="${url}" data-view="${c.id}" alt="${esc(c.species)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;catch-thumb&quot;>🐟</div>'">${n > 1 ? `<b class="pcount">${n}</b>` : ''}</span>`; };
+
+// ——— Tam ekran fotoğraf görüntüleyici (sağa/sola kaydır) ———
+const viewer = { items: [], i: 0 };
+const capOf = c => `<b>${esc(c.species)}</b>${c.length ? ` · ${c.length} cm` : ''}${c.weight ? ` · ${c.weight} g` : ''}<br><small>${esc(fmtDate(c.date))} ${fmtTime(c.date)}${spotById(c.spotId) ? ` · ${esc(spotById(c.spotId).name)}` : ''}${c.by ? ` · 👤 ${esc(c.by)}` : ''}</small>`;
+function openViewer(items, i = 0) {
+  if (!items.length) return;
+  viewer.items = items; viewer.i = Math.max(0, Math.min(items.length - 1, i));
+  showViewer();
+  if (!$('#photo-view').open) $('#photo-view').showModal();
+}
+function showViewer() {
+  const it = viewer.items[viewer.i], n = viewer.items.length;
+  $('#photo-img').src = it.src;
+  $('#photo-cap').innerHTML = it.cap + (n > 1 ? `<div class="pv-count">${viewer.i + 1} / ${n}</div>` : '');
+  $('#pv-prev').hidden = $('#pv-next').hidden = n < 2;
+}
+const viewerStep = d => { const n = viewer.items.length; if (n < 2) return; viewer.i = (viewer.i + d + n) % n; showViewer(); };
+// Bir avın fotoğrafları
+function openPhoto(id, i = 0) {
   const c = state.catches.find(x => x.id === id); if (!c) return;
-  const url = photoUrl(c); if (!url) return;
-  $('#photo-img').src = url;
-  $('#photo-cap').innerHTML = `<b>${esc(c.species)}</b>${c.length ? ` · ${c.length} cm` : ''}${c.weight ? ` · ${c.weight} g` : ''}<br><small>${esc(fmtDate(c.date))} ${fmtTime(c.date)}${spotById(c.spotId) ? ` · ${esc(spotById(c.spotId).name)}` : ''}${c.by ? ` · 👤 ${esc(c.by)}` : ''}</small>`;
-  $('#photo-view').showModal();
+  openViewer(catchPhotos(c).map(p => ({ src: photoSrc(c, p), cap: capOf(c) })).filter(x => x.src), i);
 }
+// Bir meradaki tüm fotoğraflar (yeniden eskiye)
+const spotPhotos = list => list.flatMap(c => catchPhotos(c).map(p => ({ c, src: photoSrc(c, p) }))).filter(x => x.src);
+function photoGrid(list, { max = 0, more = '' } = {}) {
+  const all = spotPhotos(list);
+  if (!all.length) return '';
+  const shown = max ? all.slice(0, max) : all;
+  return `<div class="pgrid">${shown.map((x, i) => `<button type="button" class="pcell" data-gallery="${i}"><img src="${x.src}" alt="${esc(x.c.species)}" loading="lazy" onerror="this.parentElement.remove()"><span>${esc(x.c.species)}${x.c.length ? ` ${x.c.length} cm` : ''}</span></button>`).join('')}
+    ${max && all.length > max ? `<button type="button" class="pcell more" data-dtab="catches">+${all.length - max}<span>${more || 'tümü'}</span></button>` : ''}</div>`;
+}
+
 function dropPhotoUrl(id) {
-  const u = state.photoUrls.get(id);
-  if (u) { URL.revokeObjectURL(u); state.photoUrls.delete(id); }
+  for (const [k, u] of state.photoUrls) if (k === id || k.startsWith(id + ':')) { URL.revokeObjectURL(u); state.photoUrls.delete(k); }
 }
 
 // Konum: birkaç saniye GPS'i dinleyip en hassas ölçümü al (ilk ölçüm çoğu zaman baz istasyonu/Wi-Fi'dan, kaba gelir)
@@ -241,8 +276,8 @@ function fillSpotSelect(sel, selected) {
 }
 
 function openCatchDialog(c = null, preset = {}) {
-  editing = c ? { id: c.id, photo: c.photo || null, photoUrl: c.photoUrl || null, lat: c.lat, lng: c.lng, orig: c }
-              : { id: null, photo: null, photoUrl: null, lat: preset.lat ?? null, lng: preset.lng ?? null };
+  editing = c ? { id: c.id, photos: catchPhotos(c).map(p => ({ ...p })), lat: c.lat, lng: c.lng, orig: c }
+              : { id: null, photos: [], lat: preset.lat ?? null, lng: preset.lng ?? null };
   $('#catch-dialog-title').textContent = c ? 'Avı düzenle' : 'Yeni Av';
   $('#catch-species').value = c?.species || '';
   $('#catch-length').value = c?.length ?? '';
@@ -255,25 +290,25 @@ function openCatchDialog(c = null, preset = {}) {
   $('#catch-released').checked = !!c?.released;
   $('#catch-notes').value = c?.notes || '';
   $('#catch-delete').hidden = !c;
-  $('#catch-photo').value = '';
-  showPhotoPreview(editing.photo, editing.photoUrl);
+  renderEditPhotos();
   updateLocationText();
   checkSize();
   ['catch-species', 'catch-bait', 'catch-method'].forEach(renderSugg);
   $('#catch-dialog').showModal();
 }
 
-function showPhotoPreview(blob, url = null) {
-  const img = $('#catch-photo-preview');
-  if (img.dataset.url) { URL.revokeObjectURL(img.dataset.url); delete img.dataset.url; }
-  if (blob || url) {
-    if (blob) img.dataset.url = URL.createObjectURL(blob);
-    img.src = blob ? img.dataset.url : url; img.hidden = false; // grupta başkasının fotoğrafı: internetteki adres
-    $('#catch-photo-label').textContent = 'Değiştir';
-  } else {
-    img.hidden = true; img.removeAttribute('src');
-    $('#catch-photo-label').textContent = '📷 Fotoğraf ekle';
-  }
+// Av penceresindeki fotoğraflar: küçük resimler + ✕ + "＋ ekle"
+const editKeys = new Map();
+function editSrc(p) {
+  if (!p.blob) return p.url;
+  if (!editKeys.has(p)) editKeys.set(p, URL.createObjectURL(p.blob));
+  return editKeys.get(p);
+}
+function renderEditPhotos() {
+  const ph = editing.photos;
+  $('#catch-photos').innerHTML = ph.map((p, i) => `<div class="ptile"><img src="${editSrc(p)}" alt="" data-epv="${i}"><button type="button" class="prm" data-rm="${i}" aria-label="Fotoğrafı kaldır">✕</button>${i === 0 ? '<span class="pfirst">kapak</span>' : ''}</div>`).join('') +
+    (ph.length < MAX_PHOTOS ? `<label class="ptile padd"><input type="file" id="catch-photo" accept="image/*" multiple hidden><span>📷<br>${ph.length ? 'Ekle' : 'Fotoğraf ekle'}</span></label>` : '');
+  $('#catch-photo-count').textContent = ph.length ? `${ph.length}/${MAX_PHOTOS} fotoğraf · ilk fotoğraf kapak` : `En fazla ${MAX_PHOTOS} fotoğraf`;
 }
 
 function updateLocationText() {
@@ -312,12 +347,14 @@ async function saveCatch(e) {
     spotId, lat, lng,
     released: $('#catch-released').checked,
     notes: $('#catch-notes').value.trim(),
-    photo: editing.photo,
+    photos: editing.photos.map(p => ({ id: p.id, ...(p.blob ? { blob: p.blob } : {}), ...(p.url ? { url: p.url } : {}) })),
     updatedAt: new Date().toISOString(),
   };
-  // Grup kaydı alanları (kim ekledi, internetteki fotoğraf) düzenlemede kaybolmasın
+  // Eski sürümler için ilk fotoğraf ayrıca (photo / photoUrl)
+  rec.photo = rec.photos[0]?.blob || null;
+  if (rec.photos[0]?.url) rec.photoUrl = rec.photos[0].url;
+  // Grup kaydı alanları (kim ekledi) düzenlemede kaybolmasın
   if (editing.orig) for (const k of ['by', 'editedBy', 'createdAt']) if (editing.orig[k] != null) rec[k] = editing.orig[k];
-  if (editing.photoUrl) rec.photoUrl = editing.photoUrl;
   dropPhotoUrl(rec.id);
   await db.put('catches', rec);
   try {
@@ -1261,7 +1298,10 @@ function renderDetail() {
       if (!myCatches.length) return `<div class="empty"><span class="big">📒</span>Bu merada henüz kayıtlı av yok.<br>Av eklerken "Mera" kısmından bu merayı seçin.</div>
         ${spotById(place.key || place.id) ? `<div class="popup-actions big"><button data-act="catch-spot" data-id="${esc(place.key || place.id)}">＋ Bu meraya av ekle</button></div>` : ''}`;
       const sm = catchSummary(myCatches);
-      return `<div class="tiles">
+      const nPh = spotPhotos(myCatches).length;
+      return `${nPh ? `<h3 class="sec-h">📷 Fotoğraflar <small>(${nPh})</small></h3>${photoGrid(myCatches)}` : ''}
+        <h3 class="sec-h">📒 Avlar</h3>
+        <div class="tiles">
           <div class="tile"><div class="label">Toplam balık</div><div class="value">${sm.n}</div><div class="sub">${myCatches.length} kayıt</div></div>
           <div class="tile"><div class="label">En çok</div><div class="value" style="font-size:1.15rem">${esc(sm.species || '—')}</div><div class="sub">tür</div></div>
           <div class="tile"><div class="label">En iyi yem</div><div class="value" style="font-size:1.15rem">${esc(sm.bait || '—')}</div><div class="sub">bu merada</div></div>
@@ -1401,7 +1441,14 @@ function renderDetail() {
     <div class="card advice"><h3>💡 Öneri</h3>${advice.map(t => `<p>${t}</p>`).join('')}</div>
 
     <div class="dtabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-dtab="${k}" class="${k === tab ? 'active' : ''}">${l}</button>`).join('')}</div>
-    <div class="dtab-body">${tabHtml[tab]()}</div>
+    <div class="dtab-body">${tabHtml[tab]()}${tab === 'hourly' && myCatches.length ? `
+      <div class="card spot-catches"><h3>📒 Bu meradaki avlar <small>(${catchSummary(myCatches).n} balık)</small></h3>
+        ${photoGrid(myCatches, { max: 5, more: 'fotoğraf' })}
+        <div class="catch-list mini">${myCatches.slice(0, 3).map(c => `<button class="catch-item" data-catch="${c.id}">${photoUrl(c) ? thumbImg(photoUrl(c), c) : `<div class="catch-thumb">${findSpecies(c.species)?.emoji || '🐟'}</div>`}
+          <div class="catch-body"><div class="catch-title">${esc(c.species)}${c.count > 1 ? ` <span class="tag">×${c.count}</span>` : ''}</div>
+          <div class="catch-meta">${esc([fmtDate(c.date), c.length && c.length + ' cm', c.bait, c.by && '👤 ' + c.by].filter(Boolean).join(' · '))}</div></div></button>`).join('')}</div>
+        <button type="button" class="btn small block" data-dtab="catches">Tüm avlar ve fotoğraflar (${myCatches.length}) ›</button>
+      </div>` : ''}</div>
     <div class="popup-actions big">
       <a href="https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}" target="_blank" rel="noopener">🧭 Google yol tarifi</a>
       <a href="https://maps.apple.com/?daddr=${place.lat},${place.lng}" target="_blank" rel="noopener">🍎 Apple Haritalar</a>
@@ -1426,6 +1473,8 @@ async function onDetailClick(e) {
   if (h) { detail.sel = detail.a.rows.find(r => r.date.getTime() === +h.dataset.t); renderDetail(); return; }
   const ci = e.target.closest('[data-catch]');
   if (ci) { openCatchDialog(state.catches.find(c => c.id === ci.dataset.catch)); return; }
+  const gal = e.target.closest('[data-gallery]');
+  if (gal) { const list = spotPhotos(catchesAt(detail.a.place)); openViewer(list.map(x => ({ src: x.src, cap: capOf(x.c) })), +gal.dataset.gallery); return; }
   const dt = e.target.closest('[data-dtab]');
   if (dt) { detail.tab = dt.dataset.dtab; renderDetail(); return; }
   const sl = e.target.closest('[data-slot]');
@@ -1718,7 +1767,8 @@ function askName(title, value = '', { required = false, note = '' } = {}) {
 const blobToDataUrl = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
 
 async function backupPayload() {
-  const catches = await Promise.all(state.catches.map(async c => ({ ...c, photo: c.photo ? await blobToDataUrl(c.photo) : null })));
+  const catches = await Promise.all(state.catches.map(async c => ({ ...c, photo: c.photo ? await blobToDataUrl(c.photo) : null,
+    photos: await Promise.all(catchPhotos(c).map(async p => ({ id: p.id, url: p.url || null, data: p.blob ? await blobToDataUrl(p.blob) : null }))) })));
   const keep = {};
   for (const k of ['checklist', 'trip', 'rankMode', 'mapBase']) { const v = ls(k); if (v != null) keep[k] = v; }
   return { app: 'rastgele', version: 1, exportedAt: new Date().toISOString(), catches, spots: state.spots, settings: keep };
@@ -1728,8 +1778,10 @@ async function importPayload(data) {
   for (const s2 of data.spots || []) await db.put('spots', s2);
   for (const c of data.catches || []) {
     const photo = c.photo ? await (await fetch(c.photo)).blob() : null;
+    const photos = Array.isArray(c.photos) ? await Promise.all(c.photos.map(async p => ({ id: p.id, ...(p.url ? { url: p.url } : {}),
+      ...(p.data ? { blob: await (await fetch(p.data)).blob() } : {}) }))) : undefined;
     dropPhotoUrl(c.id);
-    await db.put('catches', { ...c, photo });
+    await db.put('catches', { ...c, photo, ...(photos ? { photos } : {}) });
   }
   for (const [k, v] of Object.entries(data.settings || {})) { try { if (ls(k) == null) localStorage.setItem(k, v); } catch { /* yok */ } }
   await loadData(); refreshAll();
@@ -1870,7 +1922,18 @@ function bindEvents() {
     e.preventDefault(); e.stopPropagation();
     openPhoto(v.dataset.view);
   }, true);
-  $('#photo-view').addEventListener('click', () => $('#photo-view').close());
+  const pv = $('#photo-view');
+  $('#pv-prev').addEventListener('click', e => { e.stopPropagation(); viewerStep(-1); });
+  $('#pv-next').addEventListener('click', e => { e.stopPropagation(); viewerStep(1); });
+  let pvX = null;
+  pv.addEventListener('pointerdown', e => { pvX = e.clientX; });
+  pv.addEventListener('pointerup', e => {
+    if (pvX == null) return;
+    const dx = e.clientX - pvX; pvX = null;
+    if (Math.abs(dx) > 40) { viewerStep(dx < 0 ? 1 : -1); pv.dataset.swiped = Date.now(); }
+  });
+  pv.addEventListener('click', e => { if (e.target.closest('.pv-nav')) return; if (Date.now() - (+pv.dataset.swiped || 0) < 400) return; pv.close(); });
+  pv.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') viewerStep(-1); if (e.key === 'ArrowRight') viewerStep(1); });
   $('#catch-search').addEventListener('input', renderCatches);
   $('#catch-list').addEventListener('click', e => {
     const item = e.target.closest('.catch-item');
@@ -1883,10 +1946,21 @@ function bindEvents() {
   $('#catch-delete').addEventListener('click', deleteCatch);
   $('#catch-species').addEventListener('input', checkSize);
   $('#catch-length').addEventListener('input', checkSize);
-  $('#catch-photo').addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try { editing.photo = await compressImage(file); editing.photoUrl = null; showPhotoPreview(editing.photo); } catch (err) { toast(err.message); }
+  // Fotoğraf ekle (birden çok seçilebilir), kaldır, büyüt
+  $('#catch-photos').addEventListener('change', async e => {
+    if (e.target.id !== 'catch-photo') return;
+    const files = [...e.target.files].slice(0, MAX_PHOTOS - editing.photos.length);
+    if (e.target.files.length > files.length) toast(`En fazla ${MAX_PHOTOS} fotoğraf eklenebilir`);
+    for (const f of files) {
+      try { editing.photos.push({ id: db.newId().slice(0, 12), blob: await compressImage(f) }); } catch (err) { toast(err.message); }
+    }
+    renderEditPhotos();
+  });
+  $('#catch-photos').addEventListener('click', e => {
+    const rm = e.target.closest('[data-rm]');
+    if (rm) { e.preventDefault(); editing.photos.splice(+rm.dataset.rm, 1); renderEditPhotos(); return; }
+    const v = e.target.closest('[data-epv]');
+    if (v) openViewer(editing.photos.map(p => ({ src: editSrc(p), cap: '' })), +v.dataset.epv);
   });
   $('#catch-use-location').addEventListener('click', async () => {
     $('#catch-location-text').textContent = 'Konum alınıyor…';
