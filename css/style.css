@@ -854,3 +854,17 @@ body.group-mode .group-bar .gb-btn { padding: 4px 10px; font-size: .75rem; }
 #name-dialog input { margin-top: 6px; }
 /* Boş/uyarı kartında kalın kelimeler satır bölmesin */
 .carousel .rank-item.empty, .here-card .rank-item.empty { display: block; }
+
+/* iPhone: hızlı dokunuşlar "çift dokunup yakınlaştır" sanılmasın, gecikme olmasın */
+button, a, input, select, label, .rank-item, .chip, .leaflet-popup-content { touch-action: manipulation; }
+/* Haritadaki küçük kutu düğmeleri (Mera kaydet, Detay…) parmakla rahat basılsın */
+.leaflet-popup-content .popup-actions { gap: 8px; }
+.leaflet-popup-content .popup-actions a, .leaflet-popup-content .popup-actions button {
+  min-height: 40px; padding: 9px 12px; font-size: .9rem; font-weight: 600; display: inline-flex; align-items: center;
+}
+.here-close { width: 32px; height: 32px; font-size: .8rem; }
+.dots i { position: relative; }
+.dots i::after { content: ''; position: absolute; inset: -9px -4px; } /* noktaların dokunma alanı büyük */
+/* Grup açıklaması */
+.group-what { margin: 4px 0 6px; font-size: .9rem; line-height: 1.45; }
+.group-steps { margin: 0 0 6px; padding-left: 20px; font-size: .85rem; line-height: 1.5; }

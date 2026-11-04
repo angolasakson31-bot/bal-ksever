@@ -1475,11 +1475,11 @@ function renderStats() {
 }
 
 // ————————————————— Rehber & Ayarlar —————————————————
-let moreTab = 'fish', rigKind = 'sea';
+let moreTab = 'settings', rigKind = 'sea';
 function renderMore() {
   let checked = [];
   try { checked = JSON.parse(localStorage.getItem('checklist') || '[]'); } catch { /* yok */ }
-  const TABS = [['fish', '🐟 Balıklar'], ['knots', '🪢 Düğümler'], ['rigs', '🎣 Takımlar'], ['list', '🎒 Liste'], ['settings', '⚙️ Ayarlar']];
+  const TABS = [['settings', '⚙️ Ayarlar'], ['fish', '🐟 Balıklar'], ['knots', '🪢 Düğümler'], ['rigs', '🎣 Takımlar'], ['list', '🎒 Liste']];
   const body = {
     fish: () => `    <div class="card"><h3>🐟 Marmara balık rehberi</h3>
       ${SPECIES.filter(s => s.name !== 'Diğer').map(s => `<details class="species-card card">
@@ -1570,7 +1570,9 @@ function groupCard() {
     <button class="btn small" data-gact="share" data-code="${x.code}">📤 Link</button>
     <button class="btn small danger" data-gact="leave" data-code="${x.code}">Çık</button></span></div>`;
   return `<div class="card"><h3>👥 Arkadaş grubu</h3>
-    <p class="muted">Grup linkine girenler aynı meraları ve avları görür, ekler, düzenler. Normal linkte her şey kişisel kalır, grupla karışmaz.</p>
+    <p class="group-what"><b>Ne işe yarar?</b> Arkadaşlarınla <b>ortak mera ve av defteri</b>. Biri mera ya da av eklediğinde hepiniz görürsünüz.</p>
+    <ol class="group-steps"><li>Aşağıya grup adını yaz, <b>Oluştur</b>'a bas.</li><li>Çıkan linki WhatsApp grubunuza at.</li><li>Linke giren herkes aynı meraları ve avları görür, ekler, düzenler.</li></ol>
+    <p class="muted">Kendi kişisel kayıtların ayrı kalır, grupla karışmaz.</p>
     ${list.length ? list.map(row).join('') : ''}
     <form id="group-create" class="row" style="margin-top:8px"><input id="group-new-name" placeholder="Yeni grup adı (ör. Bağırganlı Ekibi)" maxlength="40"><button class="btn primary small" type="submit">Oluştur</button></form>
     <p class="muted" style="margin-top:8px">Adın: <b>${esc(grp.myName() || '—')}</b> <button class="btn small" data-gact="name">Değiştir</button></p>
@@ -1882,11 +1884,12 @@ function bindEvents() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden && state.tab === 'map') renderRank(); });
   setInterval(() => { if (!document.hidden && state.tab === 'map') renderRank(); }, TTL);
   // Kaydırma (ör. 24 saatlik şerit) dokunma sayılmasın
-  let downXY = null, swiped = false, scrollT = null;
-  $('#rank-list').addEventListener('pointerdown', e => { downXY = [e.clientX, e.clientY]; swiped = false; });
+  let downXY = null, swiped = false, scrollT = null, fingerDown = false;
+  $('#rank-list').addEventListener('pointerdown', e => { downXY = [e.clientX, e.clientY]; swiped = false; fingerDown = true; });
   $('#rank-list').addEventListener('pointermove', e => { if (downXY && Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 10) swiped = true; });
+  ['pointerup', 'pointercancel'].forEach(ev => $('#rank-list').addEventListener(ev, () => { fingerDown = false; }));
   $('#rank-list').addEventListener('scroll', e => {
-    swiped = true;
+    if (fingerDown) swiped = true; // kayma sonrası yerine oturma dokunuşu engellemesin
     // Hava şeridi bir kez kaydırıldıysa ipucunu artık gösterme
     if (e.target.classList?.contains('mini-wx') && !document.body.classList.contains('wxhint-off')) {
       document.body.classList.add('wxhint-off');
