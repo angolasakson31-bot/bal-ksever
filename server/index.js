@@ -21,8 +21,15 @@ const MAX_BODY = 64 * 1024; // bir kayıt en fazla 64 KB (fotoğraflar Cloudinar
 async function makeStore() {
   if (!process.env.MONGODB_URI) {
     console.warn('UYARI: MONGODB_URI yok, veriler bellekte tutuluyor (yalnızca test için).');
-    const groups = new Map(), items = new Map();
+    const groups = new Map(), items = new Map(), members = new Map();
     return {
+      putMember: async m => { members.set(m._id, m); },
+      members: async g => [...members.values()].filter(m => m.g === g),
+      authorCounts: async g => {
+        const out = {};
+        for (const x of items.values()) if (x.g === g && !x.deleted && x.createdBy) { const o = out[x.createdBy] ||= { spots: 0, catches: 0 }; o[x.store === 'spots' ? 'spots' : 'catches']++; }
+        return out;
+      },
       getGroup: async code => groups.get(code) || null,
       addGroup: async g => { groups.set(g._id, g); },
       getItem: async id => items.get(id) || null,
@@ -36,9 +43,19 @@ async function makeStore() {
   const client = new MongoClient(process.env.MONGODB_URI);
   await client.connect();
   const db = client.db(process.env.MONGODB_DB || 'rastgele');
-  const groups = db.collection('groups'), items = db.collection('items');
+  const groups = db.collection('groups'), items = db.collection('items'), members = db.collection('members');
   await items.createIndex({ g: 1, updatedAt: 1 });
+  await members.createIndex({ g: 1 });
   return {
+    putMember: m => members.replaceOne({ _id: m._id }, m, { upsert: true }),
+    members: g => members.find({ g }).toArray(),
+    authorCounts: async g => {
+      const rows = await items.aggregate([{ $match: { g, deleted: { $ne: true }, createdBy: { $type: 'string' } } },
+        { $group: { _id: { by: '$createdBy', s: '$store' }, n: { $sum: 1 } } }]).toArray();
+      const out = {};
+      for (const r of rows) { const o = out[r._id.by] ||= { spots: 0, catches: 0 }; o[r._id.s === 'spots' ? 'spots' : 'catches'] += r.n; }
+      return out;
+    },
     getGroup: code => groups.findOne({ _id: code }),
     addGroup: g => groups.insertOne(g),
     getItem: id => items.findOne({ _id: id }),
@@ -110,8 +127,24 @@ async function main() {
       const group = await store.getGroup(code);
       if (!group) return send(res, 404, { error: 'Grup bulunamadı. Link doğru mu?' }, origin);
 
-      // Grup bilgisi: GET /api/g/:code
-      if (req.method === 'GET' && p.length === 3) return send(res, 200, { name: group.name, count: await store.count(code), now: Date.now() }, origin);
+      // Grup bilgisi + üyeler: GET /api/g/:code
+      if (req.method === 'GET' && p.length === 3) {
+        const [count, mem, counts] = await Promise.all([store.count(code), store.members(code), store.authorCounts(code)]);
+        const members = mem.sort((a, b) => b.lastSeen - a.lastSeen).map(m => ({ id: m.id, name: m.name, lastSeen: m.lastSeen, joinedAt: m.joinedAt, ...(counts[m.name] || { spots: 0, catches: 0 }) }));
+        return send(res, 200, { name: group.name, count, members, now: Date.now() }, origin);
+      }
+
+      // Üye bildirimi (gruba girince / arada bir): POST /api/g/:code/members {id, name}
+      if (req.method === 'POST' && p[3] === 'members' && p.length === 4) {
+        if (limited(ip, 'member', 60, 60e3)) return send(res, 429, { error: 'Çok fazla istek' }, origin);
+        const body = await readBody(req);
+        const id = String(body.id || ''), name = cleanText(body.name, 30);
+        if (!/^[A-Za-z0-9-]{8,40}$/.test(id) || !name) return send(res, 400, { error: 'Geçersiz üye' }, origin);
+        const _id = `${code}:${id}`;
+        const old = (await store.members(code)).find(m => m._id === _id);
+        await store.putMember({ _id, g: code, id, name, lastSeen: Date.now(), joinedAt: old?.joinedAt || Date.now() });
+        return send(res, 200, { ok: true }, origin);
+      }
 
       // Değişiklikler: GET /api/g/:code/changes?since=ms
       if (req.method === 'GET' && p[3] === 'changes' && p.length === 4) {
