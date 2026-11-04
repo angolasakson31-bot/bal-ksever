@@ -381,7 +381,7 @@ export function classifyOverpass(elements) {
   if (river) return { type: 'river', name: nm(river) };
   return null;
 }
-async function overpassWater(lat, lng) {
+async function overpassWater(lat, lng, urgent = false) {
   const p = `${lat.toFixed(6)},${lng.toFixed(6)}`;
   const q = `[out:json][timeout:15];
 is_in(${p})->.a;
@@ -394,7 +394,8 @@ way(around:600,${p})[natural~"^(bay|strait)$"];relation(around:600,${p})[natural
 out tags;
 way(around:150,${p})[waterway~"^(river|stream|canal|brook)$"];
 out tags;`;
-  const j = await opThrottle(() => getJson(`${OVERPASS}?data=${encodeURIComponent(q)}`, 1, 8000));
+  const call = () => getJson(`${OVERPASS}?data=${encodeURIComponent(q)}`, 1, 8000);
+  const j = await (urgent ? call() : opThrottle(call)); // dokunulan nokta sıra beklemez
   return classifyOverpass(j.elements);
 }
 
@@ -403,21 +404,23 @@ export function cachedWater(lat, lng) {
   try { const c = JSON.parse(localStorage.getItem('wt3:' + key(lat, lng))); return c?.type ? c : null; } catch { return null; }
 }
 const pendingWater = new Map();
-export function detectWater(lat, lng) {
-  const k = key(lat, lng);
-  if (!pendingWater.has(k)) pendingWater.set(k, detectWaterNow(lat, lng).finally(() => pendingWater.delete(k)));
+// urgent: kullanıcının dokunduğu nokta (harita kutusu, konum kartı, mera kaydetme): arka plandaki sırayı beklemez
+export function detectWater(lat, lng, { urgent = false } = {}) {
+  const k = key(lat, lng) + (urgent ? '!' : '');
+  if (!pendingWater.has(k)) pendingWater.set(k, detectWaterNow(lat, lng, urgent).finally(() => pendingWater.delete(k)));
   return pendingWater.get(k);
 }
-async function detectWaterNow(lat, lng) {
+async function detectWaterNow(lat, lng, urgent = false) {
   const ck = 'wt3:' + key(lat, lng);
   try { const c = JSON.parse(localStorage.getItem(ck)); if (c?.type) return c; } catch { /* yok */ }
   let res = null;
   try {
-    const o = await overpassWater(lat, lng);
+    const o = await overpassWater(lat, lng, urgent);
     if (o) res = { ...o, source: 'osm' };
   } catch { /* Overpass yoğun/erişilemez: Nominatim'e bak */ }
   if (!res) try {
-    const j = await nomThrottle(() => getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&layer=natural&extratags=1&accept-language=tr`, 1, 6000));
+    const nomCall = () => getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&layer=natural&extratags=1&accept-language=tr`, 1, 6000);
+    const j = await (urgent ? nomCall() : nomThrottle(nomCall));
     const t = classifyOsm(j);
     if (t) res = { type: t, source: 'osm', name: j.name || j.address?.water || '' };
   } catch { /* ağ yok: deniz modeline bak */ }
