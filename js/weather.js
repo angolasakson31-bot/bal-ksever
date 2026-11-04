@@ -11,14 +11,14 @@ const M15 = 'temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,wind
 
 // İstek: ağ hatası, zaman aşımı, 429 (çok istek) ve 5xx'te birkaç saniye arayla tekrar dene
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function getJson(url, tries = 3) {
+async function getJson(url, tries = 3, timeoutMs = 20000) {
   let lastErr;
   for (let t = 0; t < tries; t++) {
     if (t) await sleep(t === 1 ? 1500 : 4000);
     let res;
     try {
       const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const to = ctl && setTimeout(() => ctl.abort(), 20000);
+      const to = ctl && setTimeout(() => ctl.abort(), timeoutMs);
       res = await fetch(url, ctl ? { signal: ctl.signal } : undefined);
       clearTimeout(to);
     } catch { lastErr = new Error('İnternet bağlantısı yok veya hava servisine ulaşılamadı.'); continue; }
@@ -387,7 +387,7 @@ way(around:600,${p})[natural~"^(bay|strait)$"];relation(around:600,${p})[natural
 out tags;
 way(around:150,${p})[waterway~"^(river|stream|canal|brook)$"];
 out tags;`;
-  const j = await opThrottle(() => getJson(`${OVERPASS}?data=${encodeURIComponent(q)}`, 2));
+  const j = await opThrottle(() => getJson(`${OVERPASS}?data=${encodeURIComponent(q)}`, 1, 8000));
   return classifyOverpass(j.elements);
 }
 
@@ -410,7 +410,7 @@ async function detectWaterNow(lat, lng) {
     if (o) res = { ...o, source: 'osm' };
   } catch { /* Overpass yoğun/erişilemez: Nominatim'e bak */ }
   if (!res) try {
-    const j = await nomThrottle(() => getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&layer=natural&extratags=1&accept-language=tr`));
+    const j = await nomThrottle(() => getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&layer=natural&extratags=1&accept-language=tr`, 1, 6000));
     const t = classifyOsm(j);
     if (t) res = { type: t, source: 'osm', name: j.name || j.address?.water || '' };
   } catch { /* ağ yok: deniz modeline bak */ }

@@ -34,23 +34,34 @@ function dropPhotoUrl(id) {
 }
 
 // Konum: birkaç saniye GPS'i dinleyip en hassas ölçümü al (ilk ölçüm çoğu zaman baz istasyonu/Wi-Fi'dan, kaba gelir)
-function getPosition({ wantAcc = 25, maxWait = 8000 } = {}) {
+// Konum: önce telefonun hazırdaki konumu (Wi-Fi/baz istasyonu, 1–3 sn), sonra GPS ile hassaslaştır.
+// Hassas konum gecikirse beklemeden hazırdaki konumla devam edilir; daha iyisi gelince onBetter ile bildirilir.
+function getPosition({ wantAcc = 30, maxWait = 6000, onBetter } = {}) {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('Konum desteklenmiyor'));
-    let best = null, id = null, done = false;
+    let best = null, done = false, id = null, deniedErr = null;
+    const toPos = p => ({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) });
+    const take = cur => {
+      if (best && cur.acc > best.acc) return;
+      best = cur;
+      if (done) { onBetter?.(cur); return; }
+      if (cur.acc <= wantAcc) finish();
+    };
     const finish = () => {
       if (done) return; done = true;
-      if (id != null) navigator.geolocation.clearWatch(id);
       clearTimeout(timer);
-      best ? resolve(best) : reject(new Error('Konum alınamadı. Tarayıcı ayarlarından konum iznini ve telefonun GPS\'ini açın.'));
+      if (best) resolve(best);
+      else reject(deniedErr || new Error('Konum alınamadı. Telefonun konum (GPS) ayarı açık mı? Açık alanda tekrar deneyin.'));
+      // Bulunduktan sonra 20 sn daha GPS'i dinle (daha hassası gelirse güncellenir)
+      setTimeout(() => { if (id != null) navigator.geolocation.clearWatch(id); }, best && onBetter ? 20000 : 0);
     };
     const timer = setTimeout(finish, maxWait);
-    id = navigator.geolocation.watchPosition(p => {
-      const cur = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) };
-      if (!best || cur.acc <= best.acc) best = cur;
-      if (best.acc <= wantAcc) finish();
-    }, err => { if (err.code === 1) finish(); }, // izin yoksa hemen bitir; diğer hatalarda süre dolana kadar bekle
-    { enableHighAccuracy: true, timeout: maxWait, maximumAge: 0 });
+    const onErr = err => { if (err.code === 1) { deniedErr = new Error('Konum izni yok. Tarayıcı ayarlarından bu siteye konum izni verin.'); finish(); } };
+    // 1) Hızlı: hazırdaki (son 2 dk) konum
+    navigator.geolocation.getCurrentPosition(p => { take(toPos(p)); if (best && best.acc <= 150 && !done) setTimeout(() => { if (!done) finish(); }, 1500); }, onErr,
+      { enableHighAccuracy: false, maximumAge: 120000, timeout: 4000 });
+    // 2) Hassas: GPS
+    id = navigator.geolocation.watchPosition(p => take(toPos(p)), onErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
   });
 }
 
@@ -489,19 +500,23 @@ function renderMapMarkers() {
   }
 }
 
-async function locateMe() {
-  let p;
-  try { p = await getPosition(); } catch (e) { toast(e.message); return null; }
+function showMe(p, move = true) {
   initMap();
-  if (map) { // harita yüklenemese de konum kullanılabilsin
-    map.setView([p.lat, p.lng], p.acc && p.acc > 150 ? 14 : 16);
-    if (meMarker) meMarker.setLatLng([p.lat, p.lng]);
-    else meMarker = L.circleMarker([p.lat, p.lng], { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
-    // Hassasiyet dairesi: gerçek konum bu dairenin içinde
-    if (meAcc) map.removeLayer(meAcc);
-    if (p.acc) meAcc = L.circle([p.lat, p.lng], { radius: p.acc, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.1, interactive: false }).addTo(map);
-  }
-  if (p.acc > 100) toast(`📍 Konum hassasiyeti düşük (±${p.acc} m). Telefonun GPS'i açık mı? Açık alanda tekrar deneyin.`, 5000);
+  if (!map) return; // harita yüklenemese de konum kullanılabilsin
+  if (move) map.setView([p.lat, p.lng], p.acc && p.acc > 150 ? 14 : 16);
+  if (meMarker) meMarker.setLatLng([p.lat, p.lng]);
+  else meMarker = L.circleMarker([p.lat, p.lng], { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
+  // Hassasiyet dairesi: gerçek konum bu dairenin içinde
+  if (meAcc) map.removeLayer(meAcc);
+  if (p.acc) meAcc = L.circle([p.lat, p.lng], { radius: p.acc, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.1, interactive: false }).addTo(map);
+}
+async function locateMe({ onBetter } = {}) {
+  let p;
+  try {
+    p = await getPosition({ onBetter: q => { showMe(q, false); onBetter?.(q); } });
+  } catch (e) { toast(e.message, 5000); return null; }
+  showMe(p);
+  if (p.acc > 300) toast(`📍 Yaklaşık konum (±${p.acc} m). GPS hassaslaştırıyor, birkaç saniye içinde düzelir.`, 4000);
   return p;
 }
 
@@ -724,7 +739,11 @@ async function analyze(place, opts) {
   // Bulunmuşsa hemen kullan; bulunmamışsa arka planda bul, bitince sıralamayı yenile (liste beklemesin)
   let guess = auto ? cachedWater(place.lat, place.lng) : null;
   if (auto && !guess) {
-    if (opts?.waitWater) guess = await detectWater(place.lat, place.lng).catch(() => null);
+    if (opts?.waitWater) {
+      const p = detectWater(place.lat, place.lng).catch(() => null);
+      guess = await Promise.race([p, new Promise(r => setTimeout(() => r(undefined), 5000))]);
+      if (guess === undefined) { guess = null; p.then(g => { if (g) { waterFound(); if (place.key === 'here' && !$('#here-card').hidden) toggleHereCard(true); } }); }
+    }
     else detectWater(place.lat, place.lng).then(g => { if (g) waterFound(); }).catch(() => {});
   }
   const wantSea = place.water === 'sea' || guess?.type === 'sea';
@@ -977,13 +996,20 @@ async function toggleHereCard(refresh = false) {
   if (!refresh && !box.hidden) { box.hidden = true; hereSeq++; $('#map-here').classList.remove('on'); return; }
   const seq = ++hereSeq;
   box.hidden = false; $('#map-here').classList.add('on');
-  if (!refresh) box.innerHTML = '<div class="rank-item empty">📍 Konumun bulunuyor… <small>(GPS en hassas konumu arıyor, birkaç saniye)</small></div>';
-  const p = refresh && state.hereA ? state.hereA.place : await locateMe();
+  if (!refresh) box.innerHTML = '<div class="rank-item empty">📍 Konum bulunuyor…</div>';
+  const p = refresh && state.hereA ? state.hereA.place : await locateMe({ onBetter: q => {
+    // GPS daha hassas konum verdi: ±m'yi güncelle; 150 m'den fazla kaydıysa kartı yeniden hesapla
+    if (seq !== hereSeq || !state.hereA) return;
+    const moved = distM(q, state.hereA.place);
+    state.hereA.place = { ...state.hereA.place, lat: q.lat, lng: q.lng, acc: q.acc };
+    if (moved > 150) toggleHereCard(true); else { const el = box.querySelector('.rank-no small'); if (el) el.textContent = ` ±${q.acc} m`; }
+  } });
   if (seq !== hereSeq) return;
   if (!p) { box.hidden = true; $('#map-here').classList.remove('on'); return; }
+  if (!refresh) box.innerHTML = `<div class="rank-item empty">🌤️ Hava ve su bilgisi alınıyor… <small>(📍 ±${p.acc} m)</small></div>`;
   try {
     const nm = refresh ? null : await Promise.race([placeName(p.lat, p.lng), new Promise(r => setTimeout(() => r(null), 2500))]);
-    const place = refresh ? state.hereA.place : { lat: p.lat, lng: p.lng, acc: p.acc, key: 'here', water: 'auto', name: nm?.name || 'Bulunduğun yer' };
+    const place = refresh ? { ...state.hereA.place, water: 'auto' } : { lat: p.lat, lng: p.lng, acc: p.acc, key: 'here', water: 'auto', name: nm?.name || 'Bulunduğun yer' };
     const a = await analyze(place, { waitWater: true });
     if (seq !== hereSeq) return;
     state.hereA = a;
