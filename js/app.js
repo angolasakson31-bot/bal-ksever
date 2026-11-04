@@ -662,6 +662,18 @@ function openSpotDialog(s, latlng, water, name = '') {
   $('#spot-coords').textContent = `📍 ${editingSpot.lat.toFixed(5)}, ${editingSpot.lng.toFixed(5)}`;
   $('#spot-delete').hidden = !s;
   $('#spot-dialog').showModal();
+  showAutoWater(editingSpot.lat, editingSpot.lng);
+}
+
+// "Otomatik" seçeneğinde ne bulunduğunu göster (yanlışsa kaydetmeden önce değiştirilebilsin)
+async function showAutoWater(lat, lng) {
+  const opt = $('#spot-water option[value="auto"]');
+  opt.textContent = 'Otomatik algıla (bakılıyor…)';
+  const g = await detectWater(lat, lng).catch(() => null);
+  if (editingSpot?.lat !== lat || editingSpot?.lng !== lng) return;
+  opt.textContent = g && !g.noWater
+    ? `Otomatik: ${WATER_TYPES[g.type].icon} ${WATER_TYPES[g.type].label}${g.name ? ` · ${g.name}` : ''}`
+    : 'Otomatik algıla (su bulunamadı, elle seçin)';
 }
 
 async function saveSpot(e) {
