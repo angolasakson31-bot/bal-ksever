@@ -909,3 +909,7 @@ div.catch-thumb { cursor: inherit; }
 .spot-catches .pgrid { margin-bottom: 8px; }
 .catch-list.mini .catch-item { padding: 6px; }
 .catch-list.mini .catch-thumb { width: 48px; height: 48px; font-size: 1.4rem; }
+
+/* Kartta av sayısı rozeti */
+.fish-badge { display: inline-flex; align-items: center; gap: 1px; font-size: .62rem; font-weight: 700; line-height: 1; padding: 2px 5px; border-radius: 99px;
+  background: var(--surface-2); color: var(--text); white-space: nowrap; flex: none; }
