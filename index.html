@@ -64,10 +64,17 @@
 
       <div class="map-fabs">
         <button id="map-here" class="round-btn here-btn" title="Bulunduğum yer: konumu bul ve kartını göster" aria-label="Bulunduğum yerin kartı">📍</button>
+        <button id="map-radar" class="round-btn" title="Yağmur radarı (son 2 saat)" aria-label="Yağmur radarı">🌧️</button>
         <button id="map-fit" class="round-btn" title="Tüm meraları göster" aria-label="Tüm meraları göster">🔍</button>
       </div>
 
       <!-- Yana kayan mera kartları -->
+      <div id="radar-bar" class="radar-bar" hidden>
+        <span id="radar-time">🌧️ Radar</span>
+        <input id="radar-slider" type="range" min="0" max="0" value="0" aria-label="Radar zamanı">
+        <button id="radar-play" class="gb-btn" type="button" aria-label="Oynat/durdur">⏸</button>
+        <small class="radar-credit">Weather data by RainViewer</small>
+      </div>
       <div class="carousel-wrap">
         <div id="here-card" class="here-card" hidden></div>
         <div id="rank-list" class="carousel" aria-label="Meralarım (sağa/sola kaydırın)"></div>
