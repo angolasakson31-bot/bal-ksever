@@ -11,6 +11,8 @@ const M15 = 'temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,wind
 
 // İstek: ağ hatası, zaman aşımı, 429 (çok istek) ve 5xx'te birkaç saniye arayla tekrar dene
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Hava servisine son başarılı / başarısız erişim zamanı (yenile düğmesi sonucu için)
+export const netStatus = { ok: 0, fail: 0 };
 async function getJson(url, tries = 3, timeoutMs = 20000) {
   let lastErr;
   for (let t = 0; t < tries; t++) {
@@ -23,10 +25,11 @@ async function getJson(url, tries = 3, timeoutMs = 20000) {
       clearTimeout(to);
     } catch { lastErr = new Error('İnternet bağlantısı yok veya hava servisine ulaşılamadı.'); continue; }
     const body = await res.json().catch(() => null);
-    if (res.ok && body && !body.error) return body;
+    if (res.ok && body && !body.error) { if (url.startsWith(FORECAST)) netStatus.ok = Date.now(); return body; }
     lastErr = new Error(`Hava servisi hatası (${res.status}): ${body?.reason || 'bilinmeyen'}`);
     if (res.status !== 429 && res.status < 500) break; // hatalı istek: tekrar denemenin anlamı yok
   }
+  if (url.startsWith(FORECAST)) netStatus.fail = Date.now();
   throw lastErr;
 }
 
@@ -147,6 +150,7 @@ export async function getConditions(lat, lng, { force = false, wantSea = false }
 // ——— Toplu ön yükleme: tüm meraların havası tek istekte ———
 // 12 mera için ~50 ayrı istek yerine 3 istek (saatlik, 15 dk, deniz). Sonra getConditions önbellekten okur.
 export async function prefetchConditions(points, { force = false } = {}) {
+  const done = new Set(); // bu çağrıda başarıyla yenilenen noktalar
   const need = points.filter(p => {
     const hit = memCache.get(key(p.lat, p.lng) + (p.wantSea ? ':s' : ''));
     return force || !hit || Date.now() - hit.fetchedAt >= TTL;
@@ -174,9 +178,12 @@ export async function prefetchConditions(points, { force = false } = {}) {
       const k = key(p.lat, p.lng) + (p.wantSea ? ':s' : '');
       memCache.set(k, cond);
       wxSave(k, { f: fs[i], m, q: qs[i] || null, marineDist, fetchedAt: cond.fetchedAt });
+      done.add(k);
     }));
   }
+  return done;
 }
+export const condKey = (lat, lng, wantSea) => key(lat, lng) + (wantSea ? ':s' : '');
 
 // API "2026-11-02T14:00" gibi konumun yerel saatini döndürür
 function localDate(s) {

@@ -860,3 +860,7 @@ button, a, input, select, label, .rank-item, .chip, .leaflet-popup-content { tou
 /* Grup açıklaması */
 .group-what { margin: 4px 0 6px; font-size: .9rem; line-height: 1.45; }
 .group-steps { margin: 0 0 6px; padding-left: 20px; font-size: .85rem; line-height: 1.5; }
+
+/* Yenile düğmesi çalışırken döner */
+#rank-refresh.spin { animation: spin .8s linear infinite; pointer-events: none; opacity: .8; }
+@keyframes spin { to { transform: rotate(360deg); } }

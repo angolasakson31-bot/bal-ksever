@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
-import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater, prefetchConditions } from './weather.js';
+import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater, prefetchConditions, condKey, netStatus } from './weather.js';
 import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
@@ -849,7 +849,13 @@ function renderTripRow() {
 }
 
 let rankSeq = 0;
+// Sıralama çiziliyor mu (yenile düğmesi tüm çizimler bitene kadar bekler)
+let rankBusy = 0;
 async function renderRank(force = false) {
+  rankBusy++;
+  try { return await renderRankNow(force); } finally { rankBusy--; }
+}
+async function renderRankNow(force = false) {
   const box = $('#rank-list');
   const places = state.spots.filter(s => Number.isFinite(s.lat)).map(s => ({ ...s, key: s.id }));
   if ($('#rank-me').checked) {
@@ -866,10 +872,12 @@ async function renderRank(force = false) {
   if (!box.querySelector('.rank-item')) box.innerHTML = '<div class="rank-item empty">Meralar hesaplanıyor… 🎣</div>';
   const tw = rankWhen === 'trip' ? tripWindow() : null;
   // Tüm meraların havası tek istekte (çok sayıda ayrı istek servis sınırına takılıyordu)
-  await prefetchConditions(places.map(p => ({ lat: p.lat, lng: p.lng,
-    wantSea: p.water === 'sea' || ((!p.water || p.water === 'auto') && cachedWater(p.lat, p.lng)?.type === 'sea') })), { force }).catch(() => {});
+  const pts = places.map(p => ({ lat: p.lat, lng: p.lng,
+    wantSea: p.water === 'sea' || ((!p.water || p.water === 'auto') && cachedWater(p.lat, p.lng)?.type === 'sea') }));
+  const fresh = await prefetchConditions(pts, { force }).catch(() => new Set());
   if (seq !== rankSeq) return;
-  const results = await Promise.all(places.map(p => analyze(p, {}).then(a => {
+  // Elle yenilemede toplu istek başarısızsa her mera tek tek denenir (olmazsa son kayıt "eski veri" olarak gösterilir)
+  const results = await Promise.all(places.map((p, i) => analyze(p, { force: force && !fresh.has(condKey(pts[i].lat, pts[i].lng, pts[i].wantSea)) }).then(a => {
     if (!tw) return { a, r: targetRow(a) };
     const t = tripSummary(a, tw.start, tw.end);
     return t ? { a, trip: t, r: { ...t.best, score: t.avg, danger: t.danger, reasons: t.best.reasons } } : { a, r: null };
@@ -891,6 +899,7 @@ async function renderRank(force = false) {
   ok.forEach((x, i) => { if (x.a.place.key !== 'me') rankInfo.set(x.a.place.key, { rank: i + 1, score: x.v ?? 0, danger: x.r.danger }); });
   renderMapMarkers();
   const offline = results.some(x => x.a?.cond.offline);
+  state.rankStale = offline || results.some(x => x.err);
   if (offline && !state.staleTold) { state.staleTold = true; toast('⚠️ Bazı meraların güncel verisi alınamadı, son kaydedilen veri gösteriliyor. ↻ ile tekrar deneyebilirsin.', 5000); }
   if (!offline) state.staleTold = false;
   const total = ok.length;
@@ -1903,7 +1912,23 @@ function bindEvents() {
     renderTripRow(); renderRank();
   });
   $('#rank-me').addEventListener('change', () => renderRank());
-  $('#rank-refresh').addEventListener('click', () => renderRank(true));
+  // Yenile: dönen simge, bitince sonuç yazısı; radar açıksa o da yenilenir
+  $('#rank-refresh').addEventListener('click', async () => {
+    const btn = $('#rank-refresh');
+    if (btn.classList.contains('spin')) return;
+    btn.classList.add('spin');
+    const t0 = Date.now();
+    try {
+      await Promise.all([renderRank(true), radar.on ? radarLoad().catch(() => {}) : null]);
+      while (rankBusy) await new Promise(r => setTimeout(r, 150)); // araya giren yeniden çizimler de bitsin
+      // Hava servisinden bu basıştan sonra yeni veri geldi mi?
+      const got = netStatus.ok >= t0, failed = netStatus.fail >= t0;
+      toast(!got ? '⚠️ Hava servisine ulaşılamadı. İnternetini kontrol et; son kaydedilen veri gösteriliyor.'
+        : failed || state.rankStale ? '⚠️ Bazı meralar güncellenemedi, son kaydedilen veri gösteriliyor.'
+        : `✓ Güncellendi (${hh(new Date())})`, 3500);
+    } catch { toast('Güncellenemedi. İnternet bağlantını kontrol et.', 3500); }
+    finally { setTimeout(() => btn.classList.remove('spin'), Math.max(0, 600 - (Date.now() - t0))); }
+  });
   $('#spot-menu').addEventListener('click', onSpotMenu);
   $('#spot-rename-form').addEventListener('submit', renameSpot);
   {
