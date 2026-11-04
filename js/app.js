@@ -28,6 +28,15 @@ function photoUrl(c) {
   if (!state.photoUrls.has(c.id)) state.photoUrls.set(c.id, URL.createObjectURL(c.photo));
   return state.photoUrls.get(c.id);
 }
+// Küçük resim: dokununca büyük açılır; yüklenemezse balık simgesine döner
+const thumbImg = (url, c) => `<img class="catch-thumb" src="${url}" data-view="${c.id}" alt="${esc(c.species)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;catch-thumb&quot;>🐟</div>'">`;
+function openPhoto(id) {
+  const c = state.catches.find(x => x.id === id); if (!c) return;
+  const url = photoUrl(c); if (!url) return;
+  $('#photo-img').src = url;
+  $('#photo-cap').innerHTML = `<b>${esc(c.species)}</b>${c.length ? ` · ${c.length} cm` : ''}${c.weight ? ` · ${c.weight} g` : ''}<br><small>${esc(fmtDate(c.date))} ${fmtTime(c.date)}${spotById(c.spotId) ? ` · ${esc(spotById(c.spotId).name)}` : ''}${c.by ? ` · 👤 ${esc(c.by)}` : ''}</small>`;
+  $('#photo-view').showModal();
+}
 function dropPhotoUrl(id) {
   const u = state.photoUrls.get(id);
   if (u) { URL.revokeObjectURL(u); state.photoUrls.delete(id); }
@@ -165,7 +174,7 @@ function renderCatches() {
     if (day !== lastDay) { html += `<div class="day-head">${esc(day)}</div>`; lastDay = day; }
     const sp = findSpecies(c.species);
     const url = photoUrl(c);
-    const thumb = url ? `<img class="catch-thumb" src="${url}" alt="">` : `<div class="catch-thumb">${sp?.emoji || '🐟'}</div>`;
+    const thumb = url ? thumbImg(url, c) : `<div class="catch-thumb">${sp?.emoji || '🐟'}</div>`;
     const meta = [fmtTime(c.date), c.length && `${c.length} cm`, c.weight && `${c.weight} g`, c.bait, spotById(c.spotId)?.name, c.by && `👤 ${c.by}`]
       .filter(Boolean).map(esc).join(' · ');
     html += `<button class="catch-item" data-id="${c.id}">${thumb}<div class="catch-body">
@@ -232,8 +241,8 @@ function fillSpotSelect(sel, selected) {
 }
 
 function openCatchDialog(c = null, preset = {}) {
-  editing = c ? { id: c.id, photo: c.photo || null, lat: c.lat, lng: c.lng }
-              : { id: null, photo: null, lat: preset.lat ?? null, lng: preset.lng ?? null };
+  editing = c ? { id: c.id, photo: c.photo || null, photoUrl: c.photoUrl || null, lat: c.lat, lng: c.lng, orig: c }
+              : { id: null, photo: null, photoUrl: null, lat: preset.lat ?? null, lng: preset.lng ?? null };
   $('#catch-dialog-title').textContent = c ? 'Avı düzenle' : 'Yeni Av';
   $('#catch-species').value = c?.species || '';
   $('#catch-length').value = c?.length ?? '';
@@ -247,19 +256,19 @@ function openCatchDialog(c = null, preset = {}) {
   $('#catch-notes').value = c?.notes || '';
   $('#catch-delete').hidden = !c;
   $('#catch-photo').value = '';
-  showPhotoPreview(editing.photo);
+  showPhotoPreview(editing.photo, editing.photoUrl);
   updateLocationText();
   checkSize();
   ['catch-species', 'catch-bait', 'catch-method'].forEach(renderSugg);
   $('#catch-dialog').showModal();
 }
 
-function showPhotoPreview(blob) {
+function showPhotoPreview(blob, url = null) {
   const img = $('#catch-photo-preview');
   if (img.dataset.url) { URL.revokeObjectURL(img.dataset.url); delete img.dataset.url; }
-  if (blob) {
-    img.dataset.url = URL.createObjectURL(blob);
-    img.src = img.dataset.url; img.hidden = false;
+  if (blob || url) {
+    if (blob) img.dataset.url = URL.createObjectURL(blob);
+    img.src = blob ? img.dataset.url : url; img.hidden = false; // grupta başkasının fotoğrafı: internetteki adres
     $('#catch-photo-label').textContent = 'Değiştir';
   } else {
     img.hidden = true; img.removeAttribute('src');
@@ -306,6 +315,9 @@ async function saveCatch(e) {
     photo: editing.photo,
     updatedAt: new Date().toISOString(),
   };
+  // Grup kaydı alanları (kim ekledi, internetteki fotoğraf) düzenlemede kaybolmasın
+  if (editing.orig) for (const k of ['by', 'editedBy', 'createdAt']) if (editing.orig[k] != null) rec[k] = editing.orig[k];
+  if (editing.photoUrl) rec.photoUrl = editing.photoUrl;
   dropPhotoUrl(rec.id);
   await db.put('catches', rec);
   try {
@@ -495,7 +507,7 @@ function renderMapMarkers() {
     if (!sp && state.spots.some(x => Number.isFinite(x.lat) && distM(c, x) < 150)) continue; // meranın üstüne binmesin
     const m = L.marker([c.lat, c.lng], { icon: L.divIcon({ className: 'fish-marker', html: findSpecies(c.species)?.emoji || '🐟', iconSize: [22, 22] }) });
     const url = photoUrl(c);
-    m.bindPopup(`${url ? `<img src="${url}" style="width:160px;border-radius:8px;display:block;margin-bottom:4px">` : ''}
+    m.bindPopup(`${url ? `<img class="pop-photo" src="${url}" data-view="${c.id}" alt="${esc(c.species)}" loading="lazy">` : ''}
       <b>${esc(c.species)}</b>${c.length ? ` · ${c.length} cm` : ''}<br><small>${esc(fmtDate(c.date))} ${fmtTime(c.date)}</small>
       <div class="popup-actions"><button data-act="edit-catch" data-id="${c.id}">Aç</button></div>`);
     catchLayer.addLayer(m);
@@ -1257,7 +1269,7 @@ function renderDetail() {
         </div>
         <div class="catch-list">${myCatches.map(c => {
           const url = photoUrl(c);
-          return `<button class="catch-item" data-catch="${c.id}">${url ? `<img class="catch-thumb" src="${url}" alt="">` : `<div class="catch-thumb">${findSpecies(c.species)?.emoji || '🐟'}</div>`}
+          return `<button class="catch-item" data-catch="${c.id}">${url ? thumbImg(url, c) : `<div class="catch-thumb">${findSpecies(c.species)?.emoji || '🐟'}</div>`}
             <div class="catch-body"><div class="catch-title">${esc(c.species)}${c.count > 1 ? ` <span class="tag">×${c.count}</span>` : ''}${c.released ? '<span class="tag">salındı</span>' : ''}</div>
             <div class="catch-meta">${esc([fmtDate(c.date), fmtTime(c.date), c.length && c.length + ' cm', c.bait].filter(Boolean).join(' · '))}</div></div></button>`;
         }).join('')}</div>
@@ -1591,9 +1603,11 @@ async function setupGroup() {
   const code = grp.codeFromUrl();
   if (!code) return;
   if (!grp.groupReady()) { toast('Grup özelliği henüz kurulmadı. Kişisel kayıtlar gösteriliyor.', 5000); return; }
-  if (!grp.myName()) {
-    const n = await askName('👥 Gruba hoş geldin! Adın ne?');
-    if (n) grp.setMyName(n);
+  if (!grp.myName(code)) {
+    const gname = grp.joinedGroups().find(x => x.code === code)?.name || (await grp.groupInfo(code))?.name;
+    const n = await askName(`👥 ${gname ? `"${gname}" grubuna` : 'Gruba'} hoş geldin! Bu grupta adın ne?`, grp.lastName(),
+      { required: true, note: 'Bu grupta eklediğin meralarda ve avlarda bu ad görünür. Her grupta farklı ad kullanabilirsin.' });
+    grp.setMyName(n, code);
   }
   document.body.classList.add('group-mode');
   $('#group-bar').hidden = false;
@@ -1633,7 +1647,8 @@ function renderGroupBar() {
 function groupCard() {
   if (!grp.groupReady()) return `<div class="card"><h3>👥 Arkadaş grubu</h3><p class="muted">Grup özelliği henüz kurulmadı (sunucu adresi ayarlanınca açılacak).</p></div>`;
   const g = grp.group, list = grp.joinedGroups();
-  const row = x => `<div class="group-row"><span><b>${esc(x.name)}</b>${x.code === g.code ? ' <span class="tag">şu an açık</span>' : ''}</span>
+  const row = x => `<div class="group-row"><span><b>${esc(x.name)}</b>${x.code === g.code ? ' <span class="tag">şu an açık</span>' : ''}
+    <br><small class="muted">Adın: <b>${esc(grp.myName(x.code) || '—')}</b> <button class="link-btn" data-gact="name" data-code="${x.code}">değiştir</button></small></span>
     <span class="row">${x.code === g.code ? '' : `<button class="btn small" data-gact="open" data-code="${x.code}">Aç</button>`}
     <button class="btn small" data-gact="share" data-code="${x.code}">📤 Link</button>
     <button class="btn small danger" data-gact="leave" data-code="${x.code}">Çık</button></span></div>`;
@@ -1643,7 +1658,6 @@ function groupCard() {
     <p class="muted">Kendi kişisel kayıtların ayrı kalır, grupla karışmaz.</p>
     ${list.length ? list.map(row).join('') : ''}
     <form id="group-create" class="row" style="margin-top:8px"><input id="group-new-name" placeholder="Yeni grup adı (ör. Bağırganlı Ekibi)" maxlength="40"><button class="btn primary small" type="submit">Oluştur</button></form>
-    <p class="muted" style="margin-top:8px">Adın: <b>${esc(grp.myName() || '—')}</b> <button class="btn small" data-gact="name">Değiştir</button></p>
   </div>`;
 }
 
@@ -1657,10 +1671,10 @@ async function shareGroup(code, name) {
 async function onGroupAction(act, code) {
   if (act === 'create') {
     const name = $('#group-new-name').value.trim() || 'Balık grubu';
-    if (!grp.myName()) { const n = await askName('Adın ne?'); if (n) grp.setMyName(n); }
+    const by = await askName(`"${name}" grubunda adın ne?`, grp.lastName(), { required: true, note: 'Grupta eklediğin meralarda ve avlarda bu ad görünür.' });
     try {
       toast('Grup oluşturuluyor… (sunucu uyuyorsa 30 sn sürebilir)', 4000);
-      const r = await grp.createGroup(name);
+      const r = await grp.createGroup(name, by);
       renderMore();
       if (confirm(`"${r.name}" grubu oluşturuldu! Linki şimdi WhatsApp grubunuza gönderelim mi?`)) await shareGroup(r.code, r.name);
     } catch (e) { toast('Grup oluşturulamadı: ' + e.message, 5000); }
@@ -1672,19 +1686,30 @@ async function onGroupAction(act, code) {
     if (code === grp.group.code) { await grp.leaveGroup(code); location.href = location.pathname; return; }
     await grp.leaveGroup(code); renderMore();
   }
-  if (act === 'name') { const n = await askName('Adın', grp.myName()); if (n) { grp.setMyName(n); renderMore(); } }
+  if (act === 'name') {
+    const gname = grp.joinedGroups().find(x => x.code === code)?.name || 'Grup';
+    const n = await askName(`"${gname}" grubundaki adın`, grp.myName(code) || grp.lastName(), { note: 'Sadece bu grupta, bundan sonra eklediklerinde görünür.' });
+    if (n) { grp.setMyName(n, code); renderMore(); renderGroupBar(); }
+  }
 }
 
 // Ad sorma penceresi (tarayıcının kutusu yerine)
-function askName(title, value = '') {
+function askName(title, value = '', { required = false, note = '' } = {}) {
   return new Promise(resolve => {
-    const dlg = $('#name-dialog'), inp = $('#name-input');
+    const dlg = $('#name-dialog'), inp = $('#name-input'), err = $('#name-error');
     $('#name-title').textContent = title;
-    inp.value = value;
+    $('#name-note').textContent = note || 'Eklediğin meralarda ve avlarda gruptakiler bu adı görür.';
+    inp.value = value; err.hidden = true;
+    $('#name-cancel').hidden = required; // zorunluysa vazgeçilemez
     const done = v => { dlg.close(); resolve(v); };
-    $('#name-form').onsubmit = e => { e.preventDefault(); done(inp.value.trim() || null); };
+    $('#name-form').onsubmit = e => {
+      e.preventDefault();
+      const v = inp.value.trim();
+      if (v.length < 2) { err.hidden = false; inp.focus(); return; }
+      done(v);
+    };
     $('#name-cancel').onclick = () => done(null);
-    dlg.oncancel = e => { e.preventDefault(); done(null); };
+    dlg.oncancel = e => { e.preventDefault(); if (!required) done(null); };
     dlg.showModal();
     setTimeout(() => inp.focus(), 50);
   });
@@ -1839,6 +1864,13 @@ function setupInstallHint() {
 function bindEvents() {
   document.querySelectorAll('.bottom-nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#fab').addEventListener('click', () => openCatchDialog());
+  document.addEventListener('click', e => {
+    const v = e.target.closest('img[data-view]');
+    if (!v) return;
+    e.preventDefault(); e.stopPropagation();
+    openPhoto(v.dataset.view);
+  }, true);
+  $('#photo-view').addEventListener('click', () => $('#photo-view').close());
   $('#catch-search').addEventListener('input', renderCatches);
   $('#catch-list').addEventListener('click', e => {
     const item = e.target.closest('.catch-item');
@@ -1854,7 +1886,7 @@ function bindEvents() {
   $('#catch-photo').addEventListener('change', async e => {
     const file = e.target.files[0];
     if (!file) return;
-    try { editing.photo = await compressImage(file); showPhotoPreview(editing.photo); } catch (err) { toast(err.message); }
+    try { editing.photo = await compressImage(file); editing.photoUrl = null; showPhotoPreview(editing.photo); } catch (err) { toast(err.message); }
   });
   $('#catch-use-location').addEventListener('click', async () => {
     $('#catch-location-text').textContent = 'Konum alınıyor…';
