@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
-import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater } from './weather.js';
+import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater, prefetchConditions } from './weather.js';
 import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
@@ -834,7 +834,11 @@ async function renderRank(force = false) {
   const seq = ++rankSeq;
   if (!box.querySelector('.rank-item')) box.innerHTML = '<div class="rank-item empty">Meralar hesaplanıyor… 🎣</div>';
   const tw = rankWhen === 'trip' ? tripWindow() : null;
-  const results = await Promise.all(places.map(p => analyze(p, { force }).then(a => {
+  // Tüm meraların havası tek istekte (çok sayıda ayrı istek servis sınırına takılıyordu)
+  await prefetchConditions(places.map(p => ({ lat: p.lat, lng: p.lng,
+    wantSea: p.water === 'sea' || ((!p.water || p.water === 'auto') && cachedWater(p.lat, p.lng)?.type === 'sea') })), { force }).catch(() => {});
+  if (seq !== rankSeq) return;
+  const results = await Promise.all(places.map(p => analyze(p, {}).then(a => {
     if (!tw) return { a, r: targetRow(a) };
     const t = tripSummary(a, tw.start, tw.end);
     return t ? { a, trip: t, r: { ...t.best, score: t.avg, danger: t.danger, reasons: t.best.reasons } } : { a, r: null };
@@ -856,6 +860,8 @@ async function renderRank(force = false) {
   ok.forEach((x, i) => { if (x.a.place.key !== 'me') rankInfo.set(x.a.place.key, { rank: i + 1, score: x.v ?? 0, danger: x.r.danger }); });
   renderMapMarkers();
   const offline = results.some(x => x.a?.cond.offline);
+  if (offline && !state.staleTold) { state.staleTold = true; toast('⚠️ Bazı meraların güncel verisi alınamadı, son kaydedilen veri gösteriliyor. ↻ ile tekrar deneyebilirsin.', 5000); }
+  if (!offline) state.staleTold = false;
   const total = ok.length;
   box.innerHTML =
     ok.map((x, i) => (x.trip ? tripCard(x, i, total) : spotCard(x, i, total))).join('') +
@@ -919,7 +925,7 @@ function spotCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
       ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
     </span>
     <span class="rank-name">${state.newIds?.has(a.place.key) ? '<span class="tag new">🆕</span> ' : ''}${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span>${a.place.by ? ` <span class="by">👤 ${esc(a.place.by)}</span>` : ''}</span>
-    <span class="rank-time">${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
+    <span class="rank-time">${a.cond.offline ? `<b class="stale">⚠️ ${hh(new Date(a.cond.fetchedAt))} verisi</b> · ` : ''}${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
     ${miniWx(a, r.date)}
     <span class="rank-meta">🐟 ${esc(sp)}</span>
     ${catchLine(a.place)}
@@ -942,6 +948,17 @@ function cardData(a) {
 
 // —— Bulunduğum yer kartı (🎣 düğmesi: aç / kapat) ——
 let hereSeq = 0;
+// Bulunduğun yerde deniz/göl/dere yoksa: balık puanı yerine en yakın meraları göster
+function noWaterCard(a) {
+  const near = state.spots.filter(sp => Number.isFinite(sp.lat)).map(sp => ({ sp, d: distM(a.place, sp) })).sort((x, y) => x.d - y.d).slice(0, 2);
+  const km = d => d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`;
+  return `<div class="rank-item nowater">
+    <span class="rank-top"><span class="rank-no">${hereNo(a)}</span></span>
+    <span class="rank-name">${esc(a.place.name)}</span>
+    <span class="rank-meta">🚫 Yakında deniz, göl ya da dere görünmüyor. Su kenarına gidince 📍'ye tekrar bas.</span>
+    ${near.length ? `<span class="rank-meta">En yakın meraların: ${near.map(n => `<b>${esc(n.sp.name)}</b> (${km(n.d)})`).join(', ')}</span>` : ''}
+  </div>`;
+}
 const hereNo = a => `📍${a.place.acc ? `<small> ±${a.place.acc} m</small>` : ''}`;
 async function toggleHereCard(refresh = false) {
   const box = $('#here-card');
@@ -959,6 +976,7 @@ async function toggleHereCard(refresh = false) {
     if (seq !== hereSeq) return;
     state.hereA = a;
     const x = cardData(a);
+    if (a.guess?.noWater) { box.innerHTML = '<button class="here-close" aria-label="Kapat">✕</button>' + noWaterCard(a); return; }
     box.innerHTML = '<button class="here-close" aria-label="Kapat">✕</button>' +
       (x ? (x.trip ? tripCard(x, 0, 1, hereNo(a)) : spotCard(x, 0, 1, hereNo(a))) : '<div class="rank-item empty">Bu zaman için tahmin yok.</div>');
   } catch (e) {
@@ -1393,12 +1411,16 @@ async function mapPointPopup(latlng) {
 
 // ————————————————— İstatistik —————————————————
 let statsRange = 'all';
+let statsWho = 'all';
 function renderStats() {
   const since = statsRange === '30' ? Date.now() - 30 * 86400000
     : statsRange === 'year' ? new Date(new Date().getFullYear(), 0, 1).getTime() : 0;
-  const cs = state.catches.filter(c => new Date(c.date).getTime() >= since);
+  const mine = grp.group.code && statsWho === 'me';
+  const cs = state.catches.filter(c => new Date(c.date).getTime() >= since && (!mine || c.by === grp.myName()));
   const box = $('#stats-content');
-  const seg = `<div class="seg">${[['all', 'Tümü'], ['year', 'Bu yıl'], ['30', 'Son 30 gün']]
+  const seg = (grp.group.code ? `<div class="seg">${[['all', '👥 Herkes'], ['me', `👤 Ben${grp.myName() ? ` (${esc(grp.myName())})` : ''}`]]
+    .map(([k, l]) => `<button data-who="${k}" class="${statsWho === k ? 'active' : ''}">${l}</button>`).join('')}</div>` : '') +
+    `<div class="seg">${[['all', 'Tümü'], ['year', 'Bu yıl'], ['30', 'Son 30 gün']]
     .map(([k, l]) => `<button data-range="${k}" class="${statsRange === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
   if (!cs.length) { box.innerHTML = seg + '<div class="empty"><span class="big">📊</span>Bu dönemde av kaydı yok.</div>'; return; }
 
@@ -1502,8 +1524,8 @@ async function setupGroup() {
   if (!code) return;
   if (!grp.groupReady()) { toast('Grup özelliği henüz kurulmadı. Kişisel kayıtlar gösteriliyor.', 5000); return; }
   if (!grp.myName()) {
-    const n = prompt('👥 Gruba hoş geldin! Adın ne? (Eklediğin meralarda ve avlarda görünecek)', '');
-    if (n && n.trim()) grp.setMyName(n);
+    const n = await askName('👥 Gruba hoş geldin! Adın ne?');
+    if (n) grp.setMyName(n);
   }
   document.body.classList.add('group-mode');
   $('#group-bar').hidden = false;
@@ -1565,7 +1587,7 @@ async function shareGroup(code, name) {
 async function onGroupAction(act, code) {
   if (act === 'create') {
     const name = $('#group-new-name').value.trim() || 'Balık grubu';
-    if (!grp.myName()) { const n = prompt('Adın ne? (Gruptakiler görecek)', ''); if (n && n.trim()) grp.setMyName(n); }
+    if (!grp.myName()) { const n = await askName('Adın ne?'); if (n) grp.setMyName(n); }
     try {
       toast('Grup oluşturuluyor… (sunucu uyuyorsa 30 sn sürebilir)', 4000);
       const r = await grp.createGroup(name);
@@ -1580,7 +1602,22 @@ async function onGroupAction(act, code) {
     if (code === grp.group.code) { await grp.leaveGroup(code); location.href = location.pathname; return; }
     await grp.leaveGroup(code); renderMore();
   }
-  if (act === 'name') { const n = prompt('Adın:', grp.myName()); if (n && n.trim()) { grp.setMyName(n); renderMore(); } }
+  if (act === 'name') { const n = await askName('Adın', grp.myName()); if (n) { grp.setMyName(n); renderMore(); } }
+}
+
+// Ad sorma penceresi (tarayıcının kutusu yerine)
+function askName(title, value = '') {
+  return new Promise(resolve => {
+    const dlg = $('#name-dialog'), inp = $('#name-input');
+    $('#name-title').textContent = title;
+    inp.value = value;
+    const done = v => { dlg.close(); resolve(v); };
+    $('#name-form').onsubmit = e => { e.preventDefault(); done(inp.value.trim() || null); };
+    $('#name-cancel').onclick = () => done(null);
+    dlg.oncancel = e => { e.preventDefault(); done(null); };
+    dlg.showModal();
+    setTimeout(() => inp.focus(), 50);
+  });
 }
 
 const blobToDataUrl = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
@@ -1619,7 +1656,10 @@ async function importBackup(file) {
   try {
     const data = JSON.parse(await file.text());
     if (data.app !== 'rastgele') throw new Error('Bu bir Rastgele yedeği değil');
-    if (!confirm(`${data.catches.length} av ve ${data.spots.length} mera eklensin mi? (Aynı kayıtlar güncellenir)`)) return;
+    const msg = grp.group.code
+      ? `⚠️ Şu an GRUP açık (${grp.group.name}).\n\nBu yedekteki ${data.catches.length} av ve ${data.spots.length} mera GRUBA eklenecek ve gruptaki herkes görecek.\n\nKişisel yedeğini kendi kayıtlarına yüklemek istiyorsan önce "👤 Kişisel"e geç.\n\nYine de gruba eklensin mi?`
+      : `${data.catches.length} av ve ${data.spots.length} mera eklensin mi? (Aynı kayıtlar güncellenir)`;
+    if (!confirm(msg)) return;
     await importPayload(data);
     renderMore();
     toast('Yedek yüklendi');
@@ -1698,7 +1738,7 @@ function installCard() {
 }
 function updateInstallUI() {
   const top = $('#top-install');
-  if (top) top.hidden = isStandalone();
+  if (top) top.hidden = isStandalone() || !!ls('hideInstall');
 }
 function setupInstallHint() {
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; updateInstallUI(); });
@@ -1717,7 +1757,12 @@ function setupInstallHint() {
   $('#install-text').textContent = 'Rastgele’yi ana ekrana ekleyin: uygulama gibi açılır.';
   $('#install-btn').hidden = false; hint.hidden = false;
   $('#install-btn').onclick = installApp;
-  $('#install-close').onclick = () => { hint.hidden = true; updateTopH(); try { localStorage.setItem('hideInstall', '1'); } catch { /* yok */ } };
+  $('#install-close').onclick = () => {
+    hint.hidden = true;
+    try { localStorage.setItem('hideInstall', '1'); } catch { /* yok */ }
+    updateInstallUI(); updateTopH();
+    toast('Gizlendi. İstersen Rehber → ⚙️ Ayarlar\'dan yine ana ekrana ekleyebilirsin.', 4000);
+  };
 }
 
 // ————————————————— Olaylar —————————————————
@@ -1871,6 +1916,8 @@ function bindEvents() {
   $('#stats-content').addEventListener('click', e => {
     const r = e.target.closest('[data-range]');
     if (r) { statsRange = r.dataset.range; renderStats(); return; }
+    const w = e.target.closest('[data-who]');
+    if (w) { statsWho = w.dataset.who; renderStats(); return; }
     const col = e.target.closest('.col');
     if (col) $('#' + col.parentElement.dataset.note).textContent = col.dataset.tip;
   });

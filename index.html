@@ -20,7 +20,7 @@
   <header class="topbar">
     <h1 id="page-title">Avlarım</h1>
     <span class="brand">🎣 Rastgele</span>
-    <button id="top-install" class="top-install" hidden>📲 Ana ekrana ekle</button>
+    <button id="top-install" class="top-install" hidden aria-label="Ana ekrana ekle" title="Ana ekrana ekle">📲 Ekle</button>
   </header>
 
   <div id="group-bar" class="group-bar" hidden>
@@ -224,6 +224,19 @@
   </dialog>
 
   <!-- Ana ekrana ekleme talimatı -->
+  <!-- Ad sorma -->
+  <dialog id="name-dialog" class="sheet">
+    <form id="name-form" method="dialog">
+      <h2 id="name-title">Adın ne?</h2>
+      <p class="muted">Eklediğin meralarda ve avlarda gruptakiler bu adı görür.</p>
+      <input id="name-input" maxlength="30" placeholder="Ör. Ahmet ya da lakabın" autocomplete="nickname" enterkeyhint="done">
+      <div class="row" style="margin-top:10px">
+        <button type="button" class="btn" id="name-cancel">Vazgeç</button>
+        <button type="submit" class="btn primary" style="flex:1">Kaydet</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Sıralama ayarları -->
   <dialog id="rank-dialog" class="sheet">
     <h2>🕐 Ne zaman balığa çıkacaksın?</h2>
