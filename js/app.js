@@ -808,7 +808,7 @@ const scorePill = r => `<span class="score-pill" style="background:${scoreColor(
 
 // —— Sıralama ——
 let rankWhen = 'now';
-const WHEN_LABEL = { now: 'şu an', trip: 'gidiş–dönüş aralığı', 'o0.5': 'yarım saat sonra', o1: '1 saat sonra', o2: '2 saat sonra', o3: '3 saat sonra', o5: '5 saat sonra', o6: '6 saat sonra', o12: '12 saat sonra',
+const WHEN_LABEL = { now: 'şu an', trip: 'gidiş–dönüş aralığı', 'o0.5': 'yarım saat sonra', o1: '1 saat sonra', o2: '2 saat sonra', o3: '3 saat sonra', o4: '4 saat sonra', o5: '5 saat sonra', o6: '6 saat sonra', o12: '12 saat sonra',
   evening: 'bu akşam', morning: 'yarın sabah', tomorrowEvening: 'yarın akşam', best24: '24 saatin en iyisi', custom: 'seçilen zaman' };
 
 function targetRow(a) {
@@ -851,6 +851,8 @@ function renderTripRow() {
 let rankSeq = 0;
 // Sıralama çiziliyor mu (yenile düğmesi tüm çizimler bitene kadar bekler)
 let rankBusy = 0;
+let rankWater = ['sea', 'lake', 'river'].includes(ls('rankWater')) ? ls('rankWater') : 'all';
+const WATER_FILTER = { all: 'Hepsi', sea: '🌊 Deniz', lake: '🏞️ Göl', river: '🏔️ Nehir' };
 async function renderRank(force = false) {
   rankBusy++;
   try { return await renderRankNow(force); } finally { rankBusy--; }
@@ -858,10 +860,6 @@ async function renderRank(force = false) {
 async function renderRankNow(force = false) {
   const box = $('#rank-list');
   const places = state.spots.filter(s => Number.isFinite(s.lat)).map(s => ({ ...s, key: s.id }));
-  if ($('#rank-me').checked) {
-    try { const p = await getPosition({ wantAcc: 100, maxWait: 4000 }); places.unshift({ ...p, name: '📍 Konumum', key: 'me', water: 'auto' }); }
-    catch (e) { toast(e.message); }
-  }
   if (!places.length) {
     box.innerHTML = `<div class="rank-item empty">🎯 Henüz mera yok. Haritada balık tuttuğunuz yere <b>basılı tutun</b>
       ya da oraya dokunup <b>📍 Mera kaydet</b>'e basın. Meralar burada en iyiden kötüye sıralanır.</div>`;
@@ -893,8 +891,10 @@ async function renderRankNow(force = false) {
       x.v = Math.round(L.reduce((t, r) => t + modeVal(r), 0) / L.length * 10) / 10;
     } else { x.show = x.r; x.v = modeVal(x.r); }
   }
-  const ok = results.filter(x => x.r).sort((x, y) => (x.r.danger - y.r.danger) || ((y.v ?? -1) - (x.v ?? -1)));
-  const bad = results.filter(x => !x.r);
+  const typeOf = x => x.a?.type ?? (x.place?.water !== 'auto' ? x.place?.water : null);
+  const shown = rankWater === 'all' ? results : results.filter(x => typeOf(x) === rankWater);
+  const ok = shown.filter(x => x.r).sort((x, y) => (x.r.danger - y.r.danger) || ((y.v ?? -1) - (x.v ?? -1)));
+  const bad = shown.filter(x => !x.r);
   rankInfo.clear();
   ok.forEach((x, i) => { if (x.a.place.key !== 'me') rankInfo.set(x.a.place.key, { rank: i + 1, score: x.v ?? 0, danger: x.r.danger }); });
   renderMapMarkers();
@@ -903,10 +903,16 @@ async function renderRankNow(force = false) {
   if (offline && !state.staleTold) { state.staleTold = true; toast('⚠️ Bazı meraların güncel verisi alınamadı, son kaydedilen veri gösteriliyor. ↻ ile tekrar deneyebilirsin.', 5000); }
   if (!offline) state.staleTold = false;
   const total = ok.length;
+  if (!shown.length) {
+    box.innerHTML = `<div class="rank-item empty">${WATER_FILTER[rankWater]} türünde meran yok. "Değiştir"den <b>Hepsi</b>'ni seç ya da bu türde bir mera ekle.</div>`;
+    $('#rank-dots').innerHTML = '';
+    $('#when-label').textContent = WHEN_SHORT[rankWhen] + ` · ${WATER_FILTER[rankWater]}`;
+    return;
+  }
   box.innerHTML =
     ok.map((x, i) => (x.trip ? tripCard(x, i, total) : spotCard(x, i, total))).join('') +
     bad.map(x => `<div class="rank-item bad"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
-  $('#when-label').textContent = WHEN_SHORT[rankWhen] + (combo ? ' · 💨 rüzgarlı puan' : '');
+  $('#when-label').textContent = WHEN_SHORT[rankWhen] + (rankWater !== 'all' ? ` · ${WATER_FILTER[rankWater]}` : '') + (combo ? ' · 💨' : '');
   $('.map-bar').classList.toggle('offline', offline);
   $('#rank-refresh').title = `Yenile · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}${offline ? ' (çevrimdışı)' : ''}`;
   renderDots();
@@ -918,7 +924,7 @@ async function renderRankNow(force = false) {
 
 // —— Kart ↔ harita eşleşmesi ——
 let selKey = null;
-const WHEN_SHORT = { now: 'Şimdi', trip: 'Gidip geleceğim', 'o0.5': '+½ saat', o1: '+1 saat', o2: '+2 saat', o3: '+3 saat', o5: '+5 saat', o6: '+6 saat', o12: '+12 saat',
+const WHEN_SHORT = { now: 'Şimdi', trip: 'Gidip geleceğim', 'o0.5': '+½ saat', o1: '+1 saat', o2: '+2 saat', o3: '+3 saat', o4: '+4 saat', o5: '+5 saat', o6: '+6 saat', o12: '+12 saat',
   evening: 'Bu akşam', morning: 'Yarın sabah', tomorrowEvening: 'Yarın akşam', best24: '24 saatin en iyisi', custom: 'Seçilen zaman' };
 const cards = () => [...$('#rank-list').querySelectorAll('.rank-item[data-key]')];
 function renderDots() {
@@ -1911,7 +1917,15 @@ function bindEvents() {
     try { localStorage.setItem('trip', JSON.stringify(trip)); } catch { /* yok */ }
     renderTripRow(); renderRank();
   });
-  $('#rank-me').addEventListener('change', () => renderRank());
+  // Hangi sular: Hepsi / Deniz / Göl / Nehir
+  const paintWater = () => document.querySelectorAll('#rank-water [data-water]').forEach(b => b.classList.toggle('active', b.dataset.water === rankWater));
+  paintWater();
+  $('#rank-water').addEventListener('click', e => {
+    const b = e.target.closest('[data-water]'); if (!b) return;
+    rankWater = b.dataset.water;
+    try { localStorage.setItem('rankWater', rankWater); } catch { /* yok */ }
+    paintWater(); renderRank();
+  });
   // Yenile: dönen simge, bitince sonuç yazısı; radar açıksa o da yenilenir
   $('#rank-refresh').addEventListener('click', async () => {
     const btn = $('#rank-refresh');

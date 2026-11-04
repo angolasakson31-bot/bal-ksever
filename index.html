@@ -243,10 +243,10 @@
     <p class="muted mode-help">Meralar seçtiğin saate göre en iyiden kötüye sıralanır.</p>
     <div class="chips wrap" id="rank-when">
       <button data-when="now" class="active">Şimdi</button>
-      <button data-when="o0.5">+½ saat</button>
       <button data-when="o1">+1 saat</button>
       <button data-when="o2">+2 saat</button>
       <button data-when="o3">+3 saat</button>
+      <button data-when="o4">+4 saat</button>
       <button data-when="o5">+5 saat</button>
       <button data-when="o6">+6 saat</button>
       <button data-when="o12">+12 saat</button>
@@ -267,13 +267,19 @@
     <div id="rank-custom-row" class="filter-row" hidden>
       <input id="rank-custom" type="datetime-local">
     </div>
+    <h3 class="sub">Hangi sular?</h3>
+    <span class="seg-mini big" id="rank-water">
+      <button data-water="all">Hepsi</button>
+      <button data-water="sea">🌊 Deniz</button>
+      <button data-water="lake">🏞️ Göl</button>
+      <button data-water="river">🏔️ Nehir</button>
+    </span>
     <h3 class="sub">Puan neye göre?</h3>
     <span class="seg-mini big" id="rank-mode">
       <button data-mode="fish">🎣 Balık</button>
       <button data-mode="combo">🎣💨 Balık + rüzgar</button>
     </span>
     <p class="muted mode-help" id="rank-mode-help"></p>
-    <label class="check"><input type="checkbox" id="rank-me"> Konumumu da listeye ekle</label>
     <details class="help-box"><summary>❓ Nasıl kullanılır?</summary>
       <p>Kartları sağa/sola kaydırın: harita o meraya gider. Karta dokunun: saat saat hava ve balık tahmini. Karta basılı tutun: adını değiştirin veya silin.</p>
       <p>Haritada meranın yuvarlağına dokunun: kartı gelir; tekrar dokunun: detay açılır. Boş yere dokunun: o noktanın puanı. Boş yere basılı tutun: yeni mera.</p>
