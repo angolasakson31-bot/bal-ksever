@@ -403,7 +403,6 @@ function initMap() {
     // Uzaklaştırınca isim etiketlerini gizle (üst üste binmesin)
     const farCheck = () => map.getContainer().classList.toggle('map-far', map.getZoom() < 11);
     map.on('zoomend', farCheck); farCheck();
-    if (ls('radar') === '1') setTimeout(() => toggleRadar(true), 300);
   }
   // Harita sekmesi görünür olduktan sonra boyutu düzelt, sonra meraları sığdır
   requestAnimationFrame(() => setTimeout(() => {
@@ -426,64 +425,6 @@ function baseLayers() {
     '⛰️ Topoğrafik (göl/dere)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
       subdomains: 'abc', maxZoom: 19, maxNativeZoom: 17, attribution: '&copy; OpenTopoMap (CC-BY-SA), OpenStreetMap' }),
   };
-}
-
-// ——— Yağmur radarı (RainViewer, ücretsiz) ———
-// Gerçek ölçüm: son ~2 saatte radarın gördüğü yağış, 10 dakikada bir kare. Tahmin değil; kartlardaki % oranlarını değiştirmez.
-// Ücretsiz sürümde en fazla 7. yakınlaştırma seviyesinde görüntü var; daha yakında aynı görüntü büyütülür.
-const radar = { on: false, frames: [], layers: [], i: 0, timer: null, refresh: null, playing: true };
-async function radarLoad() {
-  const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-  if (!r.ok) throw new Error('Radar alınamadı');
-  const j = await r.json();
-  const frames = (j.radar?.past || []).slice(-12);
-  if (!frames.length) throw new Error('Radar verisi yok');
-  radar.layers.forEach(l => map.removeLayer(l));
-  radar.frames = frames;
-  radar.layers = frames.map(f => L.tileLayer(`${j.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`, {
-    opacity: 0, maxNativeZoom: 7, maxZoom: 19, zIndex: 450, attribution: 'Weather data by <a href="https://www.rainviewer.com" target="_blank" rel="noopener">RainViewer</a>',
-  }).addTo(map));
-  const sl = $('#radar-slider'); sl.max = frames.length - 1;
-  radarShow(frames.length - 1);
-}
-function radarShow(i) {
-  radar.i = i;
-  radar.layers.forEach((l, k) => l.setOpacity(k === i ? 0.65 : 0));
-  const f = radar.frames[i];
-  if (!f) return;
-  const t = new Date(f.time * 1000), mins = Math.round((Date.now() - t) / 60000);
-  $('#radar-time').textContent = `🌧️ Radar ${hh(t)}${i === radar.frames.length - 1 ? ` · son (${mins} dk önce)` : ''}`;
-  $('#radar-slider').value = i;
-}
-function radarPlay(on) {
-  radar.playing = on;
-  $('#radar-play').textContent = on ? '⏸' : '▶';
-  clearInterval(radar.timer);
-  if (!on) return;
-  // Son 2 saati oynat, en son karede 2 sn bekle
-  radar.timer = setInterval(() => {
-    const last = radar.frames.length - 1;
-    if (radar.i === last) { radar.hold = (radar.hold || 0) + 1; if (radar.hold < 4) return; radar.hold = 0; radarShow(0); }
-    else radarShow(radar.i + 1);
-  }, 500);
-}
-async function toggleRadar(force) {
-  initMap();
-  if (!map) return;
-  const on = force ?? !radar.on;
-  radar.on = on;
-  try { localStorage.setItem('radar', on ? '1' : '0'); } catch { /* yok */ }
-  $('#map-radar').classList.toggle('on', on);
-  $('#radar-bar').hidden = !on;
-  clearInterval(radar.refresh);
-  if (!on) { radarPlay(false); radar.layers.forEach(l => map.removeLayer(l)); radar.layers = []; return; }
-  $('#radar-time').textContent = '🌧️ Radar yükleniyor…';
-  try {
-    await radarLoad();
-    if (map.getZoom() > 9) map.setZoom(9); // yağmur bulutlarını görmek için biraz uzaklaş
-    radarPlay(true);
-    radar.refresh = setInterval(() => { if (!document.hidden && radar.on) radarLoad().catch(() => {}); }, 5 * 60000);
-  } catch (e) { toast('🌧️ ' + e.message + '. İnternet bağlantınızı kontrol edin.', 4000); toggleRadar(false); }
 }
 
 // Dokunulan noktanın adı (göl, köy, iskele…) — OpenStreetMap Nominatim
@@ -2014,9 +1955,6 @@ function bindEvents() {
   });
   try { localStorage.removeItem('recentSearches'); } catch { /* yok */ } // eski aramaları sil
   $('#map-fit').addEventListener('click', () => { initMap(); fitAll(); });
-  $('#map-radar').addEventListener('click', () => toggleRadar());
-  $('#radar-play').addEventListener('click', () => radarPlay(!radar.playing));
-  $('#radar-slider').addEventListener('input', e => { radarPlay(false); radarShow(+e.target.value); });
 
 
   // Harita popup düğmeleri
@@ -2075,14 +2013,14 @@ function bindEvents() {
     try { localStorage.setItem('rankWater', rankWater); } catch { /* yok */ }
     paintWater(); renderRank();
   });
-  // Yenile: dönen simge, bitince sonuç yazısı; radar açıksa o da yenilenir
+  // Yenile: dönen simge, bitince sonuç yazısı
   $('#rank-refresh').addEventListener('click', async () => {
     const btn = $('#rank-refresh');
     if (btn.classList.contains('spin')) return;
     btn.classList.add('spin');
     const t0 = Date.now();
     try {
-      await Promise.all([renderRank(true), radar.on ? radarLoad().catch(() => {}) : null]);
+      await renderRank(true);
       while (rankBusy) await new Promise(r => setTimeout(r, 150)); // araya giren yeniden çizimler de bitsin
       // Hava servisinden bu basıştan sonra yeni veri geldi mi?
       const got = netStatus.ok >= t0, failed = netStatus.fail >= t0;
@@ -2194,3 +2132,5 @@ async function init() {
 }
 
 init();
+
+try { localStorage.removeItem('radar'); } catch { /* yok */ } // kaldırılan radarın ayarı
