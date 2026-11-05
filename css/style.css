@@ -815,13 +815,6 @@ body.group-mode .topbar { background: #155e3a; }
 .group-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .group-row .row { gap: 4px; }
 
-/* Yağmur radarı */
-.round-btn#map-radar.on { background: #1a73e8; border-color: #1a73e8; }
-.radar-bar { position: absolute; left: 8px; right: 52px; bottom: calc(var(--card-h, 150px) + 8px); z-index: 740; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  background: rgba(19,34,44,.85); color: #fff; border-radius: 12px; padding: 4px 8px; font-size: .72rem; }
-.radar-bar #radar-time { white-space: nowrap; font-weight: 600; }
-.radar-bar input[type=range] { flex: 1; min-width: 80px; padding: 0; border: 0; background: none; accent-color: #3987e5; }
-.radar-credit { flex-basis: 100%; font-size: .56rem; opacity: .75; margin-top: -2px; }
 
 /* Konum kartı kesilmesin; ipucu bir kez kaydırınca her yerde gizlensin */
 .here-card .rank-item { max-height: none; overflow: visible; }
