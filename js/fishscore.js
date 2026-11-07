@@ -185,7 +185,8 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
         else if (wt > 26) add(-0.3, `Su çok sıcak (${wt.toFixed(0)} °C)`);
         else add(0, `Su ${wt.toFixed(0)} °C`);
       } else {
-        if (wt >= 16 && wt <= 24) add(1, `Su ~${wt.toFixed(0)} °C: balık aktif`);
+        // Göl: sazan, kızılkanat gibi balıklar 25–26 °C'de de iyi beslenir (yeni su modeli yazın gölü 25–26 °C bulur)
+        if (wt >= 16 && wt <= (type === 'lake' ? 26 : 24)) add(1, `Su ~${wt.toFixed(0)} °C: balık aktif`);
         else if (wt < 6) add(-1.5, `Su çok soğuk (~${wt.toFixed(0)} °C), balık uyuşuk`);
         else if (wt < 10) add(-0.5, `Su soğuk (~${wt.toFixed(0)} °C)`);
         else if (wt > 27) add(-0.5, `Su çok sıcak (~${wt.toFixed(0)} °C), oksijen az`);
