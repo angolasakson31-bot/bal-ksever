@@ -185,6 +185,57 @@ export async function prefetchConditions(points, { force = false } = {}) {
 }
 export const condKey = (lat, lng, wantSea) => key(lat, lng) + (wantSea ? ':s' : '');
 
+// ——— Son 60 günün günlük hava sıcaklığı (göl/dere suyu sıcaklığı tahmini için) ———
+// Göller havayı haftalarca geriden izler; bu yüzden yalnız son 5 gün yetmez.
+// Ayrı ve küçük bir istek (yalnız günlük en yüksek/en düşük): saatlik veriyi büyütmez.
+// Her nokta için 6 saatte bir yenilenir, telefonda saklanır.
+const AIR_TTL = 6 * 3600e3, AIR_MAX = 60;
+const airMem = new Map();
+const airUrl = (la, ln) => `${FORECAST}?latitude=${la}&longitude=${ln}&timezone=auto&past_days=60&forecast_days=7&models=best_match&daily=temperature_2m_max,temperature_2m_min`;
+function airParse(j) {
+  const d = j?.daily;
+  if (!d?.time) return null;
+  const t = d.time.map((_, i) => (d.temperature_2m_max[i] != null && d.temperature_2m_min[i] != null ? (d.temperature_2m_max[i] + d.temperature_2m_min[i]) / 2 : null));
+  return t.filter(v => v != null).length >= 20 ? { days: d.time, t, at: Date.now() } : null;
+}
+function airGet(k) {
+  const m = airMem.get(k);
+  if (m) return m;
+  try { const c = JSON.parse(localStorage.getItem('ta1:' + k)); if (c?.days) { airMem.set(k, c); return c; } } catch { /* yok */ }
+  return null;
+}
+function airPut(k, v) {
+  airMem.set(k, v);
+  try {
+    localStorage.setItem('ta1:' + k, JSON.stringify(v));
+    const ks = [];
+    for (let i = 0; i < localStorage.length; i++) { const x = localStorage.key(i); if (x?.startsWith('ta1:')) ks.push(x); }
+    if (ks.length > AIR_MAX) ks.map(x => [x, JSON.parse(localStorage.getItem(x))?.at || 0]).sort((a, b) => a[1] - b[1])
+      .slice(0, ks.length - AIR_MAX).forEach(([x]) => localStorage.removeItem(x));
+  } catch { /* dolu: yalnız bellekte kalsın */ }
+}
+export async function getAirDaily(lat, lng, { force = false } = {}) {
+  const k = key(lat, lng);
+  const c = airGet(k);
+  if (!force && c && Date.now() - c.at < AIR_TTL) return c;
+  try {
+    const v = airParse(await getJson(airUrl(lat.toFixed(4), lng.toFixed(4)), 2));
+    if (v) { airPut(k, v); return v; }
+  } catch { /* ağ yok */ }
+  return c; // eski kayıt da olur (yoksa null: eski yöntem kullanılır)
+}
+export async function prefetchAirDaily(points, { force = false } = {}) {
+  const need = points.filter(p => { const c = airGet(key(p.lat, p.lng)); return force || !c || Date.now() - c.at >= AIR_TTL; });
+  for (let s = 0; s < need.length; s += 25) {
+    const part = need.slice(s, s + 25);
+    try {
+      const l = asList(await getJson(airUrl(part.map(p => p.lat.toFixed(4)).join(','), part.map(p => p.lng.toFixed(4)).join(',')), 2), part.length);
+      if (l.length !== part.length) continue;
+      part.forEach((p, i) => { const v = airParse(l[i]); if (v) airPut(key(p.lat, p.lng), v); });
+    } catch { /* tek tek denenir */ }
+  }
+}
+
 // API "2026-11-02T14:00" gibi konumun yerel saatini döndürür
 function localDate(s) {
   const [d, t] = s.split('T');
@@ -361,6 +412,15 @@ const opThrottle = fn => { const p = opQueue.then(fn, fn); opQueue = p.then(() =
 const isLakeTags = t => (t.natural === 'water' && !['river', 'stream', 'canal', 'ditch', 'drain', 'wastewater', 'lagoon_salt'].includes(t.water)) || t.landuse === 'reservoir' || t.water === 'reservoir' || t.water === 'lake' || t.water === 'pond';
 const isRiverTags = t => ['river', 'stream', 'canal', 'brook'].includes(t.waterway) || (t.natural === 'water' && ['river', 'stream', 'canal'].includes(t.water));
 const isSeaTags = t => t.natural === 'coastline' || t.natural === 'bay' || t.natural === 'strait' || t.place === 'sea' || t.place === 'ocean';
+// Göl büyüklüğü: OpenStreetMap'teki gölün sınır kutusundan (yaklaşık alan, km²)
+const bboxKm2 = b => b ? Math.abs(b.maxlat - b.minlat) * 111 * Math.abs(b.maxlon - b.minlon) * 111 * Math.cos((b.minlat + b.maxlat) / 2 * Math.PI / 180) : null;
+export const sizeFromArea = a => a == null ? null : a < 1 ? 'small' : a < 25 ? 'medium' : 'large';
+function lakeArea(el, name, pick = null) {
+  const lakes = el.filter(e => e.bounds && isLakeTags(e.tags));
+  const e = (pick?.bounds ? pick : null) || (name && lakes.find(x => (x.tags['name:tr'] || x.tags.name) === name)) || lakes.sort((a, b) => bboxKm2(b.bounds) - bboxKm2(a.bounds))[0];
+  const areaKm2 = e ? Math.round(bboxKm2(e.bounds) * 10) / 10 : null;
+  return areaKm2 == null ? {} : { areaKm2, size: sizeFromArea(areaKm2) };
+}
 export function classifyOverpass(elements) {
   const el = (elements || []).filter(e => e.tags);
   const inside = el.filter(e => e.type === 'area');            // noktanın içinde olduğu alanlar (is_in)
@@ -369,13 +429,13 @@ export function classifyOverpass(elements) {
   const nm = e => e.tags['name:tr'] || e.tags.name || '';
   // 1) İçinde olduğu alan
   const inLake = inside.find(e => isLakeTags(e.tags)), inSea = inside.find(e => isSeaTags(e.tags));
-  if (inLake) return { type: 'lake', name: nm(inLake) };
+  if (inLake) return { type: 'lake', name: nm(inLake), ...lakeArea(el, nm(inLake)) };
   if (inSea) return { type: 'sea', name: nm(inSea) };
   // 2) Yakındaki göl/baraj (dere aksa bile göl), sonra deniz, en son nehir
   const lake = near.find(e => isLakeTags(e.tags));
   const sea = near.find(e => isSeaTags(e.tags));
   // Deniz de yakınsa: adı olan göl (ör. Küçükçekmece) göl; adsız küçük gölet denizi ezmesin
-  if (lake && (!sea || nm(lake))) return { type: 'lake', name: nm(lake) };
+  if (lake && (!sea || nm(lake))) return { type: 'lake', name: nm(lake), ...lakeArea(el, nm(lake), lake) };
   if (sea) return { type: 'sea', name: nm(sea) };
   const river = rivers.find(e => isRiverTags(e.tags)) || near.find(e => isRiverTags(e.tags));
   if (river) return { type: 'river', name: nm(river) };
@@ -387,11 +447,13 @@ async function overpassWater(lat, lng, urgent = false) {
 is_in(${p})->.a;
 (area.a[natural=water];area.a[landuse=reservoir];area.a[natural=bay];area.a[natural=strait];area.a[place=sea];);
 out tags;
+(way(pivot.a)[natural=water];relation(pivot.a)[natural=water];way(pivot.a)[landuse=reservoir];relation(pivot.a)[landuse=reservoir];);
+out tags bb;
 (way(around:300,${p})[natural=water];relation(around:300,${p})[natural=water];
 way(around:300,${p})[landuse=reservoir];relation(around:300,${p})[landuse=reservoir];
 way(around:300,${p})[natural=coastline];
 way(around:600,${p})[natural~"^(bay|strait)$"];relation(around:600,${p})[natural~"^(bay|strait)$"];);
-out tags;
+out tags bb;
 way(around:150,${p})[waterway~"^(river|stream|canal|brook)$"];
 out tags;`;
   const call = () => getJson(`${OVERPASS}?data=${encodeURIComponent(q)}`, 1, 8000);

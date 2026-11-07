@@ -917,3 +917,4 @@ div.catch-thumb { cursor: inherit; }
 
 .best-list li.top { font-weight: 700; }
 .best-list li.top b { font-size: 1.05em; }
+#spot-lake-row[hidden] { display: none; }

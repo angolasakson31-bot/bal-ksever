@@ -1,7 +1,7 @@
 import * as db from './db.js';
 import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
-import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater, prefetchConditions, condKey, netStatus } from './weather.js';
-import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES } from './fishscore.js';
+import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater, prefetchConditions, condKey, netStatus, getAirDaily, prefetchAirDaily } from './weather.js';
+import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES, LAKE_SIZES, lakeSizeFor, waterModel } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
 import { renderKnots, renderRigs } from './guide.js';
@@ -665,6 +665,8 @@ function openSpotDialog(s, latlng, water, name = '') {
   $('#spot-type').value = s?.type || 'İskele';
   $('#spot-water').value = s?.water || water || 'auto';
   $('#spot-shore').value = s?.shoreManual ?? 'auto';
+  $('#spot-lake').value = s?.lakeSize || 'auto';
+  $('#spot-lake-row').hidden = !['auto', 'lake'].includes($('#spot-water').value);
   $('#spot-notes').value = s?.notes || '';
   $('#spot-coords').textContent = `📍 ${editingSpot.lat.toFixed(5)}, ${editingSpot.lng.toFixed(5)}`;
   $('#spot-delete').hidden = !s;
@@ -681,13 +683,16 @@ async function showAutoWater(lat, lng) {
   opt.textContent = g && !g.noWater
     ? `Otomatik: ${WATER_TYPES[g.type].icon} ${WATER_TYPES[g.type].label}${g.name ? ` · ${g.name}` : ''}`
     : 'Otomatik algıla (su bulunamadı, elle seçin)';
+  const lk = lakeSizeFor({ name: $('#spot-name').value }, g);
+  $('#spot-lake option[value="auto"]').textContent = `Otomatik: ${LAKE_SIZES[lk.size].label}${lk.source === 'default' ? ' (bilinmiyor)' : ''}`;
+  if ($('#spot-water').value === 'auto') $('#spot-lake-row').hidden = g?.type ? g.type !== 'lake' : false;
 }
 
 async function saveSpot(e) {
   e.preventDefault();
   const rec = { ...editingSpot, id: editingSpot.id || db.newId(), name: $('#spot-name').value.trim(),
     lat: Number(editingSpot.lat), lng: Number(editingSpot.lng),
-    type: $('#spot-type').value, water: $('#spot-water').value, shoreManual: $('#spot-shore').value, notes: $('#spot-notes').value.trim(), createdAt: editingSpot.createdAt || new Date().toISOString() };
+    type: $('#spot-type').value, water: $('#spot-water').value, shoreManual: $('#spot-shore').value, lakeSize: $('#spot-lake').value, notes: $('#spot-notes').value.trim(), createdAt: editingSpot.createdAt || new Date().toISOString() };
   if (!rec.name) return;
   await db.put('spots', rec);
   $('#spot-dialog').close();
@@ -732,6 +737,8 @@ async function analyze(place, opts = {}) {
   const isSpot = !!(spotById(place.key) || spotById(place.id));
   const waterP = auto && !guess ? detectWater(place.lat, place.lng, { urgent: !!opts.waitWater }).catch(() => null) : null;
   const wantSea0 = place.water === 'sea' || guess?.type === 'sea';
+  // Göl/dere suyu sıcaklığı için son 60 günün havası (küçük ayrı istek, önbellekten gelir)
+  const airP = place.water === 'sea' ? null : getAirDaily(place.lat, place.lng, { force: !!opts.force }).catch(() => null);
   const [cond0, shoreInfo] = await Promise.all([
     getConditions(place.lat, place.lng, { ...opts, wantSea: wantSea0 }),
     shoreFor(place).catch(() => null),
@@ -747,8 +754,20 @@ async function analyze(place, opts = {}) {
   if (guess?.type === 'sea' && !wantSea0 && !cond.seaDetected) cond = await getConditions(place.lat, place.lng, { wantSea: true }).catch(() => cond);
   const type = effectiveType(place, cond, guess);
   const shore = shoreInfo?.bearing ?? null;
-  return { place, cond, type, guess, shore, shoreInfo, rows: scoreHours(cond, type, place.lat, place.lng, shore) };
+  const air = type !== 'sea' && airP ? await airP : null;
+  const lake = type === 'lake' ? lakeSizeFor(place, guess || cachedWater(place.lat, place.lng)) : null;
+  const env = { size: lake?.size || null, lake, model: waterModel(air, type, lake?.size) };
+  return { place, cond, type, guess, shore, shoreInfo, env, rows: scoreHours(cond, type, place.lat, place.lng, shore, env) };
 }
+
+// Su sıcaklığı nasıl tahmin edildi
+function waterNote(a) {
+  if (a.type === 'sea') return 'tahmini (yakın deniz noktası)';
+  if (!a.env?.model) return 'tahmini (son 5 gün hava ort.)';
+  if (a.type === 'river') return 'tahmini (dere: son günlerin havası)';
+  return `tahmini · ${LAKE_SIZES[a.env.size].label.toLocaleLowerCase('tr')} göl, son 60 günün havası`;
+}
+const lakeSourceText = l => ({ manual: 'elle seçildi', known: 'bilinen göl', auto: `haritadan${l.areaKm2 != null ? ` ~${l.areaKm2 < 10 ? l.areaKm2 : Math.round(l.areaKm2)} km²` : ''}`, default: 'bilinmiyor, orta sayıldı' })[l.source];
 
 function summaryLine(r, type) {
   return [
@@ -866,7 +885,10 @@ async function renderRankNow(force = false) {
   // Tüm meraların havası tek istekte (çok sayıda ayrı istek servis sınırına takılıyordu)
   const pts = places.map(p => ({ lat: p.lat, lng: p.lng,
     wantSea: p.water === 'sea' || ((!p.water || p.water === 'auto') && cachedWater(p.lat, p.lng)?.type === 'sea') }));
-  const fresh = await prefetchConditions(pts, { force }).catch(() => new Set());
+  const [fresh] = await Promise.all([
+    prefetchConditions(pts, { force }).catch(() => new Set()),
+    prefetchAirDaily(places.filter((p, i) => p.water !== 'sea' && !pts[i].wantSea), { force }).catch(() => null),
+  ]);
   if (seq !== rankSeq) return;
   // Elle yenilemede toplu istek başarısızsa her mera tek tek denenir (olmazsa son kayıt "eski veri" olarak gösterilir)
   const results = await Promise.all(places.map((p, i) => analyze(p, { force: force && !fresh.has(condKey(pts[i].lat, pts[i].lng, pts[i].wantSea)) }).then(a => {
@@ -1334,14 +1356,19 @@ function renderDetail() {
         <option value="auto">Su tipi: otomatik (${WATER_TYPES[effectiveType({ water: 'auto' }, cond, a.guess)].label}${a.guess?.name ? ` · ${esc(a.guess.name)}` : ''})</option>
         ${Object.entries(WATER_TYPES).map(([k, v]) => `<option value="${k}" ${place.water === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
       </select>
+      ${type === 'lake' && a.env?.lake ? `<select id="wx-lake">
+        <option value="auto">Göl büyüklüğü: otomatik (${esc(LAKE_SIZES[(a.env.lake.source === 'manual' ? lakeSizeFor({ ...place, lakeSize: 'auto' }, a.guess || cachedWater(place.lat, place.lng)) : a.env.lake).size].label)})</option>
+        ${Object.entries(LAKE_SIZES).map(([k, v]) => `<option value="${k}" ${place.lakeSize === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
+      </select>` : ''}
     </div>
+      ${type === 'lake' && a.env?.lake ? `<p class="shore-line">🏞️ Göl: <b>${esc(LAKE_SIZES[a.env.size].label)}</b> (${esc(lakeSourceText(a.env.lake))}). ${{ small: 'Küçük gölet havaya çabuk tepki verir: hava soğuyunca su da hızla serinler.', medium: 'Orta göl havayı birkaç gün geriden izler.', large: 'Büyük ve derin göl havaya yavaş tepki verir: ani soğumada su az serinler, sonbaharda havadan ılık kalır.' }[a.env.size]}</p>` : ''}
       <p class="shore-line">🧭 Suya bakış yönü: <b>${a.shoreInfo?.bearing != null ? dirName8(a.shoreInfo.bearing) : a.shoreInfo?.open ? 'her yanı su' : 'bulunamadı'}</b>${a.shoreInfo?.manual ? ' (elle seçildi)' : a.shoreInfo ? ' (otomatik)' : ''}
         ${a.shore != null && sel.windDir != null ? `<br>💨 Rüzgar şu an: <b>${{ onshore: 'sudan kıyınıza doğru', offshore: 'arkanızdan, karadan suya', cross: 'yandan' }[windRelation(sel.windDir, a.shore)]}</b> (${esc(windName(sel.windDir, true))})` : ''}
         <br><small>Yanlışsa meraya basılı tutup "Tüm bilgileri düzenle"den değiştirebilirsiniz.</small></p></div>
     <div class="card"><h3>🌤️ Ayrıntılı hava (${hh(sel.date)})</h3><div class="metrics">
       ${metric('Rüzgar', `${arrow(sel.windDir)} ${fmt(sel.wind)} km/s`, `${windName(sel.windDir)} · hamle ${fmt(sel.gust)}`)}
       ${metric('Hava', `${fmt(sel.temp)} °C`, `hissedilen ${fmt(sel.feels)} °C`)}
-      ${metric('Su sıcaklığı', sel.waterTemp == null ? '—' : `${sel.waterTempEstimated ? '~' : ''}${fmt(sel.waterTemp)} °C`, sel.waterTempEstimated ? 'tahmini (son 5 gün hava ort.)' : 'ölçülen deniz suyu')}
+      ${metric('Su sıcaklığı', sel.waterTemp == null ? '—' : `${sel.waterTempEstimated ? '~' : ''}${fmt(sel.waterTemp)} °C`, sel.waterTempEstimated ? waterNote(a) : 'ölçülen deniz suyu')}
       ${type === 'sea' ? metric('Dalga', sel.wave == null ? '—' : `${fmt(sel.wave, 1)} m`, `periyot ${fmt(sel.wavePeriod, 0)} sn · soluğan ${fmt(sel.swell, 1)} m`) : ''}
       ${type === 'sea' ? metric('Akıntı', sel.current == null ? '—' : `${fmt(sel.current, 1)} km/s`, sel.currentDir == null ? '' : `yönü ${windName(sel.currentDir, true)} tarafı`) : ''}
       ${metric('Gökyüzü', `<span style="font-size:1rem">${weatherText(sel.code) || '—'}</span>`, `bulut %${fmt(sel.cloud)}`)}
@@ -1442,10 +1469,11 @@ async function onDetailClick(e) {
 }
 
 async function onDetailWaterChange(e) {
-  if (e.target.id !== 'wx-water') return;
-  const place = { ...detail.a.place, water: e.target.value };
+  if (e.target.id !== 'wx-water' && e.target.id !== 'wx-lake') return;
+  const field = e.target.id === 'wx-water' ? 'water' : 'lakeSize';
+  const place = { ...detail.a.place, [field]: e.target.value };
   const spot = spotById(place.key) || spotById(place.id);
-  if (spot) { await db.put('spots', { ...spot, water: place.water }); await loadData(); refreshAll(); }
+  if (spot) { await db.put('spots', { ...spot, [field]: e.target.value }); await loadData(); refreshAll(); }
   const t = detail.sel.date.getTime();
   detail.a = await analyze(place, { waitWater: true });
   detail.sel = (detail.sel.slot ? rowAt(detail.a, new Date(t)) : detail.a.rows.find(r => r.date.getTime() === t)) || detail.a.rows[0];
@@ -1939,6 +1967,7 @@ function bindEvents() {
 
   // Mera formu
   $('#spot-form').addEventListener('submit', saveSpot);
+  $('#spot-water').addEventListener('change', e => { $('#spot-lake-row').hidden = !['auto', 'lake'].includes(e.target.value); });
   $('#spot-cancel').addEventListener('click', () => $('#spot-dialog').close());
   $('#spot-delete').addEventListener('click', deleteSpot);
   $('#map-here').addEventListener('click', () => toggleHereCard());
