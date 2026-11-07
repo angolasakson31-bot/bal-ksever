@@ -45,7 +45,7 @@ export function rowAt(a, date) {
     if (q.precip15 != null) v.precip = q.precip15 * 4;
     v.fine = true;
   }
-  const r = scoreRow(v, i, H, a.cond.suns, a.type, a.place.lat, a.place.lng, 15, a.shore ?? null);
+  const r = scoreRow(v, i, H, a.cond.suns, a.type, a.place.lat, a.place.lng, 15, a.shore ?? null, a.env ?? null);
   a.slotCache.set(t, r);
   return r;
 }

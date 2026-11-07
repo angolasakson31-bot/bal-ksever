@@ -57,32 +57,107 @@ const avg = a => { const v = a.filter(x => x != null); return v.length ? v.reduc
 const sum = a => a.filter(x => x != null).reduce((s, x) => s + x, 0);
 const max = a => { const v = a.filter(x => x != null); return v.length ? Math.max(...v) : null; };
 
-function lightPhase(date, suns, midMin = 30) {
+// Güneşin öğle yüksekliği (derece): 90 − |enlem − güneşin dik açısı|
+export function noonElevation(date, lat) {
+  const doy = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 864e5);
+  const decl = 23.44 * Math.sin(2 * Math.PI * (284 + doy) / 365);
+  return 90 - Math.abs(lat - decl);
+}
+
+// Işık evresi. "Öğle": güneşin gerçek tepe saati (doğuş–batış ortası) ±2 saat ve güneş yeterince yüksek
+// (kışın güneş alçakta, ~25°: öğle güneşi balığı derine itmez).
+function lightPhase(date, suns, midMin = 30, lat = 41) {
   const sun = suns.find(s => s.rise.toDateString() === date.toDateString());
   if (!sun) return null;
   const t = date.getTime() + midMin * 60000; // zaman diliminin ortası
   const near = Math.min(Math.abs(t - sun.rise.getTime()), Math.abs(t - sun.set.getTime())) / 3600000;
   if (near <= 1.5) return 'twilight';
   if (t < sun.rise.getTime() || t > sun.set.getTime()) return 'night';
-  const h = date.getHours();
-  return h >= 11 && h <= 15 ? 'midday' : 'day';
+  const noon = (sun.rise.getTime() + sun.set.getTime()) / 2;
+  return Math.abs(t - noon) <= 2 * 3600e3 && noonElevation(date, lat) >= 35 ? 'midday' : 'day';
 }
 
-// Tatlı su sıcaklığı tahmini: son 5 günün ortalama hava sıcaklığı (göller havayı gecikmeli izler)
-function freshWaterTemp(hours, i, type) {
+// ——— Tatlı su sıcaklığı tahmini ———
+// Göl büyüklüğü: küçük (gölet, sığ) havaya birkaç günde, büyük/derin göl haftalarca geriden yetişir.
+export const LAKE_SIZES = {
+  small: { label: 'Küçük (gölet, sığ)', tau: 4, bonus: 1.5, chill: 1 },
+  medium: { label: 'Orta', tau: 10, bonus: 2.5, chill: 0.7 },
+  large: { label: 'Büyük / derin', tau: 25, bonus: 2.5, chill: 0.5 },
+};
+// Bilinen göller (derinlik ve büyüklüğe göre)
+const KNOWN_LAKES = [
+  ['large', ['sapanca', 'iznik', 'omerli', 'egirdir', 'hazar']],
+  ['medium', ['terkos', 'durusu', 'buyukcekmece', 'kucukcekmece', 'alibey', 'sazlidere', 'elmali', 'darlik', 'uluabat', 'manyas', 'kusgolu', 'beysehir', 'aksehir', 'poyrazgolu', 'efteni', 'yenicaga', 'abant', 'mogan', 'eymir', 'cubuk', 'gokcekaya', 'cildir', 'karamik', 'akgol']],
+];
+const norm = s => (s || '').toLocaleLowerCase('tr').replace(/ı/g, 'i').normalize('NFD').replace(/[^a-z]/g, '');
+// Hangi büyüklük? Elle seçildiyse o, sonra bilinen göller, sonra haritadan ölçülen alan, yoksa orta.
+export function lakeSizeFor(place, guess) {
+  if (LAKE_SIZES[place?.lakeSize]) return { size: place.lakeSize, source: 'manual' };
+  for (const name of [guess?.name, place?.name]) {
+    const n = norm(name);
+    if (!n) continue;
+    for (const [size, list] of KNOWN_LAKES) if (list.some(x => n.includes(x))) return { size, source: 'known' };
+  }
+  if (LAKE_SIZES[guess?.size]) return { size: guess.size, source: 'auto', areaKm2: guess.areaKm2 };
+  return { size: 'medium', source: 'default' };
+}
+
+// Son 60 günün günlük hava ortalamasından su sıcaklığı modeli.
+//  • Göl: hava sıcaklığının gecikmeli (üstel) ortalaması — gecikme göl büyüdükçe artar —
+//    + yazın güneşin yüzeyi ısıtması (Nisan–Eylül). Göl yüzeyi 4 °C'nin altına inmez.
+//  • Dere: hava son ~3 günü izler ama uçlara gitmez (kaynak suyu yazın serin, kışın ılık tutar).
+export function waterModel(air, type, size = 'medium') {
+  if (!air?.days || type === 'sea') return null;
+  const L = LAKE_SIZES[size] || LAKE_SIZES.medium;
+  const tau = type === 'river' ? 3 : L.tau;
+  const first = air.t.slice(0, 7).filter(v => v != null);
+  let e = first.length ? first.reduce((a, b) => a + b, 0) / first.length : null;
+  const vals = air.days.map((d, i) => {
+    if (air.t[i] != null) e = e == null ? air.t[i] : e + (air.t[i] - e) / tau;
+    if (e == null) return null;
+    if (type === 'river') return Math.max(1, 11 + 0.75 * (e - 11));
+    const [y, m, dd] = d.split('-').map(Number);
+    const doy = Math.floor((new Date(y, m - 1, dd) - new Date(y, 0, 0)) / 864e5);
+    const sun = L.bonus * Math.max(0, Math.sin(Math.PI * (doy - 100) / 180));
+    return Math.max(4, e + sun);
+  });
+  const idx = new Map(air.days.map((d, i) => [d, i]));
+  const dayKey = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  return {
+    size, tau,
+    // Gün ortası değerleri arasında ara değer (gece yarısı sıçrama olmasın)
+    at(dt) {
+      const i = idx.get(dayKey(dt));
+      if (i == null || vals[i] == null) return null;
+      const f = (dt.getHours() + dt.getMinutes() / 60) / 24 - 0.5;
+      const j = f >= 0 ? i + 1 : i - 1;
+      const o = vals[j];
+      return o == null ? vals[i] : vals[i] + (o - vals[i]) * Math.abs(f);
+    },
+  };
+}
+
+// Model yoksa (veri gelmediyse) eski yöntem: son 5 günün ortalaması
+function freshWaterTemp(hours, i, type, env, date) {
+  const m = env?.model?.at(date);
+  if (m != null) return m;
   const t = avg(hours.slice(Math.max(0, i - 120), i + 1).map(h => h.temp));
   if (t == null) return null;
-  // Dereler (özellikle kaynak/dağ dereleri) genelde daha serin
-  return type === 'river' ? Math.max(2, t - 2) : Math.max(2, t);
+  return type === 'river' ? Math.max(1, 11 + 0.75 * (t - 11)) : Math.max(4, t);
 }
 
+// Aynı olayın (fırtına: rüzgar + dalga + lodos) üst üste cezalandırılmaması:
+// en büyük ceza tam, diğeri %30 sayılır.
+const joinNeg = (a, b) => (a < 0 && b < 0 ? Math.min(a, b) + 0.3 * Math.max(a, b) : Math.min(a, 0) + Math.min(b, 0));
+
 // ——— Ana fonksiyon: her saate skor ekler ———
-export function scoreHours(cond, type, lat, lng, shore = null) {
-  return cond.hours.map((r, i) => scoreRow(r, i, cond.hours, cond.suns, type, lat, lng, 60, shore));
+// env: { model: waterModel(...), size } — tatlı su sıcaklığı ve göl büyüklüğü
+export function scoreHours(cond, type, lat, lng, shore = null, env = null) {
+  return cond.hours.map((r, i) => scoreRow(r, i, cond.hours, cond.suns, type, lat, lng, 60, shore, env));
 }
 
 // Tek bir zaman dilimini puanla. i: geçmişe bakış için saatlik dizideki konum, spanMin: dilim uzunluğu (dk)
-export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore = null) {
+export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore = null, env = null) {
   {
     const mid = spanMin / 2;
     const reasons = [];
@@ -92,18 +167,17 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     const past = n => hours.slice(Math.max(0, i - n), i);
 
     // 1) Işık
-    const light = lightPhase(r.date, suns, mid);
+    const light = lightPhase(r.date, suns, mid, lat);
     if (light === 'twilight') add(type === 'sea' ? 2 : 1.8, 'Alacakaranlık: avlanma saati');
     else if (light === 'night') add(type === 'sea' ? 0.5 : 0.3, 'Gece');
     else if (light === 'midday') {
       if ((r.cloud ?? 0) >= 70) add(0.3, 'Kapalı hava, öğle güneşi yok');
-      else add(-0.8, 'Öğle güneşi, balık derine çekilir');
+      else add(noonElevation(r.date, lat) >= 50 ? -0.8 : -0.4, 'Öğle güneşi, balık derine çekilir');
     } else if (light === 'day' && type !== 'sea' && (r.cloud ?? 0) >= 70) add(0.5, 'Kapalı hava');
 
     // 2) Su sıcaklığı
-    const wt = type === 'sea' ? (r.sst ?? avg(past(24).map(h => h.sst))) : freshWaterTemp(hours, i, type);
-    r.waterTemp = wt;
-    r.waterTempEstimated = type !== 'sea' || r.sst == null;
+    const wt = type === 'sea' ? (r.sst ?? avg(past(24).map(h => h.sst))) : freshWaterTemp(hours, i, type, env, r.date);
+    const waterTemp = wt, waterTempEstimated = type !== 'sea' || r.sst == null;
     if (wt != null) {
       if (type === 'sea') {
         if (wt >= 14 && wt <= 21) add(0.6, `Su ${wt.toFixed(0)} °C: ideal aralık`);
@@ -119,30 +193,38 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
         // Ani soğuma
         const recent = avg(hours.slice(Math.max(0, i - 48), i + 1).map(h => h.temp));
         const before = avg(hours.slice(Math.max(0, i - 120), Math.max(0, i - 48)).map(h => h.temp));
-        if (recent != null && before != null && before - recent >= 4) add(-1, 'Hava aniden soğudu');
+        // Kıyı suyu çabuk soğur ama büyük/derin gölde etki daha küçük
+        const chill = type === 'river' ? 1 : (LAKE_SIZES[env?.size] || LAKE_SIZES.medium).chill;
+        if (recent != null && before != null && before - recent >= 4) add(-Math.round(chill * 10) / 10, 'Hava aniden soğudu, kıyı suyu serinler');
       }
     }
 
-    // 3) Dalga (deniz)
+    // 3) Dalga (deniz). Ceza aşağıda rüzgarla birlikte "deniz durumu" olarak eklenir (aynı fırtına iki kez sayılmasın).
+    let waveNeg = 0, waveNegText = '';
     if (type === 'sea' && r.wave != null) {
       if (r.wave < 0.15) add(0.2, 'Deniz çarşaf, su berrak');
       else if (r.wave < 0.8) add(0.5, `Hafif dalga (${r.wave.toFixed(1)} m), su hareketli`);
       else if (r.wave < 1.25) add(0, `Dalga ${r.wave.toFixed(1)} m`);
-      else if (r.wave < 2) add(-1.5, `Dalga yüksek (${r.wave.toFixed(1)} m)`);
-      else { add(-3, `Dalga tehlikeli (${r.wave.toFixed(1)} m)`); danger = true; }
+      else if (r.wave < 2) { waveNeg = -1.5; waveNegText = `Dalga yüksek (${r.wave.toFixed(1)} m)`; }
+      else { waveNeg = -3; waveNegText = `Dalga tehlikeli (${r.wave.toFixed(1)} m)`; danger = true; }
       // Fırtına sonrası bulanık su
       const maxPast = max(past(36).map(h => h.wave));
       if (maxPast != null && maxPast >= 1.5 && r.wave < 1) add(0.8, 'Fırtına sonrası bulanık su (levrek için iyi)');
     }
 
     // 4) Rüzgar
+    let seaNeg = waveNeg;
+    if (r.wind == null && waveNeg) add(waveNeg, waveNegText);
     if (r.wind != null) {
       if (type === 'sea') {
+        let windNeg = 0, windNegText = '';
         if (r.wind < 5) add(0, 'Rüzgar yok');
         else if (r.wind < 20) add(0.3, 'Rüzgar hafif-orta');
         else if (r.wind < 30) add(0, 'Rüzgar orta-sert');
-        else if (r.wind < 40) add(-1, 'Rüzgar sert, atış zor');
-        else { add(-2.5, 'Rüzgar çok sert'); danger = true; }
+        else if (r.wind < 40) { windNeg = -1; windNegText = 'Rüzgar sert, atış zor'; }
+        else { windNeg = -2.5; windNegText = 'Rüzgar çok sert'; danger = true; }
+        seaNeg = joinNeg(waveNeg, windNeg);
+        if (seaNeg) add(Math.round(seaNeg * 10) / 10, [windNegText, waveNegText].filter(Boolean).join(' · '));
       } else {
         if (r.wind < 4) add(0, 'Su ayna gibi, balık temkinli');
         else if (r.wind < 20) add(0.3, 'Hafif rüzgar, suda kırışıklık');
@@ -181,8 +263,10 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     const score = Math.round(Math.max(0, Math.min(10, s)) * 10) / 10;
     const w = windScore(r, i, hours, type, lat, lng, shore);
     // Birleşik puan: balık puanı + sadece rüzgar yönü/bölge etkisi
-    const comboScore = Math.round(Math.max(0, Math.min(10, s + w.dir)) * 10) / 10;
-    return { ...r, score, comboScore, dirNotes: w.dirNotes, windScore: w.score, windNotes: w.notes, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
+    // Yön/bölge cezası (ör. sert lodos) deniz durumu cezasıyla birlikte: aynı fırtına üçüncü kez tam sayılmaz
+    const dirAdj = w.dir < 0 && seaNeg < 0 ? joinNeg(seaNeg, w.dir) - seaNeg : w.dir;
+    const comboScore = Math.round(Math.max(0, Math.min(10, s + dirAdj)) * 10) / 10;
+    return { ...r, waterTemp, waterTempEstimated, score, comboScore, dirNotes: w.dirNotes, windScore: w.score, windNotes: w.notes, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
   }
 }
 
