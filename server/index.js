@@ -20,6 +20,8 @@ const MAX_BODY = 64 * 1024; // bir kayıt en fazla 64 KB (fotoğraflar Cloudinar
 // ——— Depolama: MongoDB ya da (test için) bellek ———
 async function makeStore() {
   if (!process.env.MONGODB_URI) {
+    // Render'da veritabanı adresi unutulursa veriler her uykuda silinirdi: hiç başlama
+    if (process.env.RENDER) { console.error('HATA: MONGODB_URI ayarlı değil. Render → Environment bölümüne ekleyin.'); process.exit(1); }
     console.warn('UYARI: MONGODB_URI yok, veriler bellekte tutuluyor (yalnızca test için).');
     const groups = new Map(), items = new Map(), members = new Map();
     return {
@@ -34,8 +36,9 @@ async function makeStore() {
       addGroup: async g => { groups.set(g._id, g); },
       getItem: async id => items.get(id) || null,
       put: async it => { items.set(it._id, it); },
-      changes: async (g, since, limit) => [...items.values()].filter(x => x.g === g && x.updatedAt > since)
-        .sort((a, b) => a.updatedAt - b.updatedAt).slice(0, limit),
+      changes: async (g, since, after, limit) => [...items.values()]
+        .filter(x => x.g === g && (x.updatedAt > since || (after && x.updatedAt === since && x._id > after)))
+        .sort((a, b) => a.updatedAt - b.updatedAt || (a._id < b._id ? -1 : a._id > b._id ? 1 : 0)).slice(0, limit),
       count: async g => [...items.values()].filter(x => x.g === g && !x.deleted).length,
     };
   }
@@ -44,7 +47,7 @@ async function makeStore() {
   await client.connect();
   const db = client.db(process.env.MONGODB_DB || 'rastgele');
   const groups = db.collection('groups'), items = db.collection('items'), members = db.collection('members');
-  await items.createIndex({ g: 1, updatedAt: 1 });
+  await items.createIndex({ g: 1, updatedAt: 1, _id: 1 });
   await members.createIndex({ g: 1 });
   return {
     putMember: m => members.replaceOne({ _id: m._id }, m, { upsert: true }),
@@ -60,7 +63,9 @@ async function makeStore() {
     addGroup: g => groups.insertOne(g),
     getItem: id => items.findOne({ _id: id }),
     put: it => items.replaceOne({ _id: it._id }, it, { upsert: true }),
-    changes: (g, since, limit) => items.find({ g, updatedAt: { $gt: since } }).sort({ updatedAt: 1 }).limit(limit).toArray(),
+    changes: (g, since, after, limit) => items.find(after
+      ? { g, $or: [{ updatedAt: { $gt: since } }, { updatedAt: since, _id: { $gt: after } }] }
+      : { g, updatedAt: { $gt: since } }).sort({ updatedAt: 1, _id: 1 }).limit(limit).toArray(),
     count: g => items.countDocuments({ g, deleted: { $ne: true } }),
   };
 }
@@ -149,12 +154,17 @@ async function main() {
       // Değişiklikler: GET /api/g/:code/changes?since=ms
       if (req.method === 'GET' && p[3] === 'changes' && p.length === 4) {
         const since = Math.max(0, Number(url.searchParams.get('since')) || 0);
+        const after = String(url.searchParams.get('after') || '').slice(0, 200);
         const now = Date.now();
-        const list = await store.changes(code, since, 1000);
-        const more = list.length === 1000;
+        const PAGE = 500;
+        const list = await store.changes(code, since, after, PAGE);
+        const more = list.length === PAGE;
+        const last = list[list.length - 1];
         return send(res, 200, {
           items: list.map(x => ({ store: x.store, id: x.id, doc: x.deleted ? null : x.doc, deleted: !!x.deleted, updatedAt: x.updatedAt, by: x.by, createdBy: x.createdBy, createdAt: x.createdAt })),
-          now: more ? list[list.length - 1].updatedAt : now - 1, more, // -1: aynı milisaniyede yazılan kaçmasın
+          // Sayfa varsa: kaldığı yer (zaman + kimlik). Yoksa 30 sn geriden başla: o sırada yazılmakta olan kayıtlar kaçmasın
+          // (istemci aynı kaydı ikinci kez alırsa zaten atlar).
+          now: more ? last.updatedAt : Math.max(0, now - 30000), after: more ? last._id : '', more,
         }, origin);
       }
 
@@ -168,7 +178,8 @@ async function main() {
         const prev = await store.getItem(_id);
         const now = Date.now();
         const item = { _id, g: code, store: st, id, updatedAt: now, by, createdBy: prev?.createdBy || by, createdAt: prev?.createdAt || now };
-        if (req.method === 'DELETE') Object.assign(item, { deleted: true, doc: null });
+        // Silinen kaydın içeriği saklanır (yanlışlıkla silmede veritabanından geri getirilebilsin)
+        if (req.method === 'DELETE') Object.assign(item, { deleted: true, doc: null, deletedDoc: prev?.doc || prev?.deletedDoc || null });
         else {
           const doc = body.doc && typeof body.doc === 'object' && !Array.isArray(body.doc) ? { ...body.doc } : null;
           if (!doc) return send(res, 400, { error: 'Kayıt yok' }, origin);
