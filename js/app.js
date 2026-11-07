@@ -356,7 +356,7 @@ async function saveCatch(e) {
   // Grup kaydı alanları (kim ekledi) düzenlemede kaybolmasın
   if (editing.orig) for (const k of ['by', 'editedBy', 'createdAt']) if (editing.orig[k] != null) rec[k] = editing.orig[k];
   dropPhotoUrl(rec.id);
-  await db.put('catches', rec);
+  try { await db.put('catches', rec); } catch (err) { saveFailed(err); return; }
   try {
     localStorage.setItem('lastBait', rec.bait); localStorage.setItem('lastMethod', rec.method);
     localStorage.setItem('lastSpot', spotId || '');
@@ -367,9 +367,16 @@ async function saveCatch(e) {
   toast(editing.id ? 'Güncellendi' : 'Rastgele! Av kaydedildi 🎣');
 }
 
+// Kayıt yazılamadı (çoğunlukla telefonda yer kalmadı): pencere açık kalır, veri kaybolmaz
+function saveFailed(err) {
+  const full = err?.name === 'QuotaExceededError' || /quota/i.test(err?.message || '');
+  toast(full ? '⚠️ Kaydedilemedi: telefonda yer kalmadı. Ayarlar → 💾 Yedek indir, sonra harita önbelleğini temizleyin.'
+    : `⚠️ Kaydedilemedi: ${err?.message || 'bilinmeyen hata'}. Pencere açık, tekrar deneyin.`, 8000);
+}
+
 async function deleteCatch() {
-  if (!editing.id || !confirm('Bu av kaydı silinsin mi?')) return;
-  await db.remove('catches', editing.id);
+  if (!editing.id || !confirm('Bu av kaydı silinsin mi? (30 gün boyunca Ayarlar → 🗑️ Silinenler\'den geri alınabilir)')) return;
+  await db.softRemove('catches', editing.id, grp.myName());
   dropPhotoUrl(editing.id);
   $('#catch-dialog').close();
   await loadData(); refreshAll();
@@ -416,7 +423,7 @@ function initMap() {
 function baseLayers() {
   const esri = path => `https://server.arcgisonline.com/ArcGIS/rest/services/${path}/MapServer/tile/{z}/{y}/{x}`;
   return {
-    '🧭 Standart (OSM, en güncel)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap katkıcıları' }),
+    '🧭 Standart (OSM, en güncel)': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> katkıcıları' }),
     '🛰️ Uydu + isimler': L.layerGroup([
       L.tileLayer(esri('World_Imagery'), { maxZoom: 19, maxNativeZoom: 18, attribution: 'Uydu &copy; Esri, Maxar, Earthstar Geographics' }),
       L.tileLayer(esri('Reference/World_Boundaries_and_Places'), { maxZoom: 19, maxNativeZoom: 18 }),
@@ -694,7 +701,7 @@ async function saveSpot(e) {
     lat: Number(editingSpot.lat), lng: Number(editingSpot.lng),
     type: $('#spot-type').value, water: $('#spot-water').value, shoreManual: $('#spot-shore').value, lakeSize: $('#spot-lake').value, notes: $('#spot-notes').value.trim(), createdAt: editingSpot.createdAt || new Date().toISOString() };
   if (!rec.name) return;
-  await db.put('spots', rec);
+  try { await db.put('spots', rec); } catch (err) { saveFailed(err); return; }
   $('#spot-dialog').close();
   map?.closePopup();
   await loadData(); refreshAll();
@@ -702,8 +709,8 @@ async function saveSpot(e) {
 }
 
 async function deleteSpot() {
-  if (!editingSpot.id || !confirm('Bu mera silinsin mi? (Avlar silinmez)')) return;
-  await db.remove('spots', editingSpot.id);
+  if (!editingSpot.id || !confirm('Bu mera silinsin mi? (Avlar silinmez; mera 30 gün boyunca Ayarlar → 🗑️ Silinenler\'den geri alınabilir)')) return;
+  await db.softRemove('spots', editingSpot.id, grp.myName());
   rankInfo.delete(editingSpot.id);
   $('#spot-dialog').close();
   await loadData(); refreshAll();
@@ -724,7 +731,11 @@ async function shoreFor(place) {
   if (place.shore && 'bearing' in place.shore) return place.shore;
   const res = await detectShore(place.lat, place.lng);
   const sp = spotById(place.key) || spotById(place.id);
-  if (sp && res) { sp.shore = res; db.put('spots', { ...sp }).catch(() => {}); }
+  if (sp && res) {
+    sp.shore = res;
+    // Ekrandaki eski kopyayı değil, kaydın güncel halini güncelle (başkasının düzenlemesini ezmesin)
+    db.get('spots', sp.id).then(cur => cur && !cur.shore && db.put('spots', { ...cur, shore: res })).catch(() => {});
+  }
   return res;
 }
 
@@ -1173,8 +1184,8 @@ async function onSpotMenu(e) {
   if (act === 'catch') openCatchDialog(null, { spotId: s.id });
   if (act === 'edit') openSpotDialog(s);
   if (act === 'directions') window.open(`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`, '_blank', 'noopener');
-  if (act === 'delete' && confirm(`“${s.name}” silinsin mi? (Bu meradaki av kayıtları silinmez)`)) {
-    await db.remove('spots', s.id);
+  if (act === 'delete' && confirm(`“${s.name}” silinsin mi? (Bu meradaki av kayıtları silinmez; 30 gün boyunca Ayarlar → 🗑️ Silinenler'den geri alınabilir)`)) {
+    await db.softRemove('spots', s.id, grp.myName());
     rankInfo.delete(s.id);
     await loadData(); refreshAll();
     toast('Mera silindi');
@@ -1185,7 +1196,8 @@ async function renameSpot(e) {
   e.preventDefault();
   const name = $('#spot-rename').value.trim();
   if (!name || !menuSpot) return;
-  await db.put('spots', { ...menuSpot, name });
+  const cur = await db.get('spots', menuSpot.id).catch(() => null);
+  await db.put('spots', { ...(cur || menuSpot), name });
   $('#spot-menu').close();
   await loadData(); refreshAll();
   toast('Adı değiştirildi');
@@ -1473,7 +1485,7 @@ async function onDetailWaterChange(e) {
   const field = e.target.id === 'wx-water' ? 'water' : 'lakeSize';
   const place = { ...detail.a.place, [field]: e.target.value };
   const spot = spotById(place.key) || spotById(place.id);
-  if (spot) { await db.put('spots', { ...spot, [field]: e.target.value }); await loadData(); refreshAll(); }
+  if (spot) { const cur = await db.get('spots', spot.id).catch(() => null); await db.put('spots', { ...(cur || spot), [field]: e.target.value }); await loadData(); refreshAll(); }
   const t = detail.sel.date.getTime();
   detail.a = await analyze(place, { waitWater: true });
   detail.sel = (detail.sel.slot ? rowAt(detail.a, new Date(t)) : detail.a.rows.find(r => r.date.getTime() === t)) || detail.a.rows[0];
@@ -1609,14 +1621,47 @@ function renderMore() {
         <label class="btn" style="margin:0;color:var(--text)">⬆️ Yedek yükle<input type="file" id="import-file" accept="application/json,.json" hidden></label>
       </div>
       <p class="muted">${state.catches.length} av, ${state.spots.length} mera kayıtlı.</p>
+      <p class="muted" id="storage-info"></p>
     </div>
+    <div class="card"><h3>🗑️ Silinenler</h3><p class="muted">Silinen meralar ve avlar 30 gün burada durur, geri alınabilir.</p><div id="trash-box">yükleniyor…</div></div>
 
     <div class="card"><h3>ℹ️ Hakkında</h3>
       <p class="muted">Rastgele v1 · Kıyı balıkçıları için av günlüğü. Harita: © OpenStreetMap katkıcıları. Hava: Open-Meteo.</p>
     </div>`,
   };
   setTimeout(fillMembers, 0);
+  if (moreTab === 'settings') setTimeout(fillSettingsExtras, 0);
   $('#more-content').innerHTML = `<div class="dtabs more-tabs">${TABS.map(([k, l]) => `<button data-more="${k}" class="${k === moreTab ? 'active' : ''}">${l}</button>`).join('')}</div>${body[moreTab]()}`;
+}
+
+// Ayarlar: çöp kutusu ve depolama durumu
+async function fillSettingsExtras() {
+  const box = $('#trash-box');
+  if (box) {
+    const list = await db.trashList().catch(() => []);
+    box.innerHTML = list.length ? list.map(t => `<div class="trash-row"><span>${t.store === 'spots' ? '📍' : '🐟'} <b>${esc(t.store === 'spots' ? t.item.name || 'Mera' : t.item.species || 'Av')}</b>
+      <small class="muted">${new Date(t.deletedAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}${t.by ? ` · ${esc(t.by)}` : ''}</small></span>
+      <button class="btn small" data-restore="${esc(t.k)}">Geri al</button></div>`).join('') : '<p class="muted">Boş.</p>';
+  }
+  const info = $('#storage-info');
+  if (info && navigator.storage?.estimate) {
+    try {
+      const [e, p] = await Promise.all([navigator.storage.estimate(), navigator.storage.persisted?.() ?? false]);
+      info.innerHTML = `Telefonda kullanılan: ${(e.usage / 1048576).toFixed(0)} MB · Kalıcı depolama: ${p ? 'açık ✓' : 'kapalı (tarayıcı yer açmak için silebilir, düzenli yedek alın)'}
+        <br><button class="link-btn" id="clear-tiles">Harita önbelleğini temizle</button>`;
+    } catch { /* yok */ }
+  }
+}
+async function onSettingsClick(e) {
+  const r = e.target.closest('[data-restore]');
+  if (r) {
+    const t = await db.restoreTrash(r.dataset.restore);
+    if (t) { toast(`${t.store === 'spots' ? 'Mera' : 'Av'} geri alındı ✓`); await loadData(); refreshAll(); renderMore(); }
+  }
+  if (e.target.id === 'clear-tiles') {
+    try { for (const k of await caches.keys()) if (k.startsWith('tiles')) await caches.delete(k); } catch { /* yok */ }
+    toast('Harita önbelleği temizlendi'); fillSettingsExtras();
+  }
 }
 
 // ————————————————— Arkadaş grubu —————————————————
@@ -1643,6 +1688,7 @@ let reloadT = null;
 function onGroupEvent(ev) {
   renderGroupBar();
   if (ev.error) toast('👥 ' + ev.error, 6000);
+  if (ev.failedNew) toast('⚠️ Bir kayıt gruba gönderilemedi (çok büyük ya da hatalı). Ayarlar → Arkadaş grubu bölümünden bakabilirsin.', 7000);
   if (ev.fresh?.length) {
     ev.fresh.forEach(f => { if (f.isNew) state.newIds.add(f.id); });
     const by = new Map();
@@ -1663,8 +1709,8 @@ function renderGroupBar() {
   const g = grp.group;
   if (!g.code) return;
   $('#group-name').textContent = g.name || 'Grup';
-  $('#group-status').textContent = g.pending ? `⏳ ${g.pending} kayıt gönderilecek` : g.online ? '● güncel' : '○ sunucu uyanıyor / internet yok';
-  $('#group-status').className = 'gb-status' + (g.online && !g.pending ? ' ok' : '');
+  $('#group-status').textContent = g.failed ? `⚠️ ${g.failed} kayıt gönderilemedi` : g.pending ? `⏳ ${g.pending} kayıt gönderilecek` : g.online ? '● güncel' : '○ sunucu uyanıyor / internet yok';
+  $('#group-status').className = 'gb-status' + (g.online && !g.pending && !g.failed ? ' ok' : '');
 }
 
 function groupCard() {
@@ -1680,6 +1726,7 @@ function groupCard() {
     <p class="group-what"><b>Ne işe yarar?</b> Arkadaşlarınla <b>ortak mera ve av defteri</b>. Biri mera ya da av eklediğinde hepiniz görürsünüz.</p>
     <ol class="group-steps"><li>Aşağıya grup adını yaz, <b>Oluştur</b>'a bas.</li><li>Link kopyalanır; WhatsApp grubunuza yapıştırın (sonra da <b>📋 Link</b> ya da üstteki <b>📋 Davet</b> ile kopyalayabilirsin).</li><li>Linke giren herkes aynı meraları ve avları görür, ekler, düzenler.</li></ol>
     <p class="muted">Kendi kişisel kayıtların ayrı kalır, grupla karışmaz.</p>
+    ${g.failed ? `<div class="warn-box">⚠️ <b>${g.failed} kayıt gruba gönderilemedi.</b> Genellikle not çok uzun olduğunda olur. Kaydı düzenleyip kısaltın, sonra <button class="btn small" data-gact="retry">Tekrar dene</button></div>` : ''}
     ${list.length ? list.map(row).join('') : ''}
     <form id="group-create" class="row" style="margin-top:8px"><input id="group-new-name" placeholder="Yeni grup adı (ör. Bağırganlı Ekibi)" maxlength="40"><button class="btn primary small" type="submit">Oluştur</button></form>
   </div>`;
@@ -1725,10 +1772,14 @@ async function onGroupAction(act, code) {
       await shareGroup(r.code, r.name); // oluşturunca link kopyalanır
     } catch (e) { toast('Grup oluşturulamadı: ' + e.message, 5000); }
   }
+  if (act === 'retry') { await grp.retryFailed(); renderGroupBar(); renderMore(); }
   if (act === 'open') location.href = grp.groupLink(code);
   if (act === 'share') shareGroup(code, grp.joinedGroups().find(x => x.code === code)?.name);
   if (act === 'leave') {
-    if (!confirm('Bu gruptan çıkılsın mı? Gruptaki kayıtlar silinmez, sadece bu telefondan kaldırılır. Link ile tekrar girebilirsin.')) return;
+    if (code === grp.group.code) await grp.sync().catch(() => {});
+    const unsent = await grp.unsentCount(code).catch(() => 0);
+    if (unsent && !confirm(`⚠️ Bu grupta henüz sunucuya gönderilmemiş ${unsent} kayıt var. Çıkarsan bunlar KAYBOLUR.\n\nÖnce internete bağlanıp grubu açman önerilir. Yine de çıkılsın mı?`)) return;
+    if (!confirm('Bu gruptan çıkılsın mı? Sunucuya gönderilmiş kayıtlar grupta kalır, sadece bu telefondan kaldırılır. Link ile tekrar girebilirsin.')) return;
     if (code === grp.group.code) { await grp.leaveGroup(code); location.href = location.pathname; return; }
     await grp.leaveGroup(code); renderMore();
   }
@@ -1764,29 +1815,52 @@ function askName(title, value = '', { required = false, note = '' } = {}) {
 const blobToDataUrl = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
 
 async function backupPayload() {
-  const catches = await Promise.all(state.catches.map(async c => ({ ...c, photo: c.photo ? await blobToDataUrl(c.photo) : null,
+  // Fotoğraflar yalnız photos içinde (eski "photo" alanı ayrıca yazılmaz: yedek iki kat büyümesin)
+  const catches = await Promise.all(state.catches.map(async c => ({ ...c, photo: null,
     photos: await Promise.all(catchPhotos(c).map(async p => ({ id: p.id, url: p.url || null, data: p.blob ? await blobToDataUrl(p.blob) : null }))) })));
   const keep = {};
-  for (const k of ['checklist', 'trip', 'rankMode', 'mapBase']) { const v = ls(k); if (v != null) keep[k] = v; }
+  // Grup linkleri ve adların da yedekte olsun (telefon değişirse gruplar kaybolmasın)
+  for (const k of ['checklist', 'trip', 'rankMode', 'mapBase', 'groups', 'groupNames', 'myName']) { const v = ls(k); if (v != null) keep[k] = v; }
   return { app: 'rastgele', version: 1, exportedAt: new Date().toISOString(), catches, spots: state.spots, settings: keep };
 }
 async function importPayload(data) {
   if (data?.app !== 'rastgele') throw new Error('Bu bir Rastgele yedeği değil');
-  for (const s2 of data.spots || []) await db.put('spots', s2);
+  const ms = v => (typeof v === 'number' ? v : Date.parse(v) || 0);
+  const okId = id => typeof id === 'string' && /^[A-Za-z0-9._:-]{1,80}$/.test(id);
+  const dataUrl = u => (typeof u === 'string' && u.startsWith('data:image/') ? u : null);
+  const toBlob = async u => (dataUrl(u) ? (await fetch(u)).blob() : null);
+  // Telefondaki daha yeni kayıt, yedekteki eski haliyle ezilmesin
+  const newer = async (store, rec) => { const cur = await db.get(store, rec.id).catch(() => null); return cur && ms(cur.updatedAt) > ms(rec.updatedAt); };
+  for (const s2 of data.spots || []) {
+    if (!s2 || !okId(s2.id) || await newer('spots', s2)) continue;
+    await db.put('spots', s2);
+  }
   for (const c of data.catches || []) {
-    const photo = c.photo ? await (await fetch(c.photo)).blob() : null;
-    const photos = Array.isArray(c.photos) ? await Promise.all(c.photos.map(async p => ({ id: p.id, ...(p.url ? { url: p.url } : {}),
-      ...(p.data ? { blob: await (await fetch(p.data)).blob() } : {}) }))) : undefined;
+    if (!c || !okId(c.id) || await newer('catches', c)) continue;
+    const photos = Array.isArray(c.photos) ? (await Promise.all(c.photos.slice(0, 6).map(async p => ({ id: String(p.id || db.newId()).slice(0, 20),
+      ...(typeof p.url === 'string' && p.url.startsWith('https://') ? { url: p.url } : {}), ...(dataUrl(p.data) ? { blob: await toBlob(p.data) } : {}) }))))
+      .filter(p => p.url || p.blob) : undefined;
+    const photo = photos?.[0]?.blob || await toBlob(c.photo);
     dropPhotoUrl(c.id);
     await db.put('catches', { ...c, photo, ...(photos ? { photos } : {}) });
   }
-  for (const [k, v] of Object.entries(data.settings || {})) { try { if (ls(k) == null) localStorage.setItem(k, v); } catch { /* yok */ } }
+  for (const [k, v] of Object.entries(data.settings || {})) {
+    try {
+      if (k === 'groups') { // gruplar birleştirilir
+        const mine = JSON.parse(ls('groups') || '[]'), add = JSON.parse(v || '[]').filter(x => x?.code && !mine.some(m => m.code === x.code));
+        localStorage.setItem('groups', JSON.stringify([...mine, ...add].slice(0, 10)));
+      } else if (k === 'groupNames') localStorage.setItem(k, JSON.stringify({ ...JSON.parse(v || '{}'), ...JSON.parse(ls(k) || '{}') }));
+      else if (ls(k) == null) localStorage.setItem(k, v);
+    } catch { /* yok */ }
+  }
   await loadData(); refreshAll();
 }
 
 async function exportBackup() {
   const blob = new Blob([JSON.stringify(await backupPayload())], { type: 'application/json' });
-  const name = `rastgele-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+  const d0 = new Date();
+  const name = `rastgele-yedek-${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}.json`;
+  try { localStorage.setItem('lastBackupAt', String(Date.now())); } catch { /* yok */ }
   const file = new File([blob], name, { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file], title: 'Rastgele yedeği' }); return; } catch (e) { if (e.name === 'AbortError') return; }
@@ -2139,6 +2213,7 @@ function bindEvents() {
     const rk = e.target.closest('[data-rig]');
     if (rk) { rigKind = rk.dataset.rig; renderMore(); return; }
     if (e.target.closest('#install-btn2')) { installApp(); return; }
+    if (e.target.closest('[data-restore]') || e.target.id === 'clear-tiles') { onSettingsClick(e); return; }
     if (e.target.id === 'export-btn') exportBackup();
     const ga = e.target.closest('[data-gact]');
     if (ga) onGroupAction(ga.dataset.gact, ga.dataset.code);

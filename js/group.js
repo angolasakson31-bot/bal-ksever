@@ -13,7 +13,7 @@ const cloud = () => ({ cloud: ls('cloudName') || CLOUDINARY.cloud, preset: ls('c
 export const groupReady = () => !!apiUrl();
 export const photoReady = () => { const c = cloud(); return !!(c.cloud && c.preset); };
 
-export const group = { code: null, name: null, online: false, pending: 0, lastSync: 0 };
+export const group = { code: null, name: null, online: false, pending: 0, failed: 0, lastSync: 0 };
 // İsim her grup için ayrı saklanır (bir grupta 'Ahmet', diğerinde 'Kaptan' olabilir)
 function groupNames() { try { return JSON.parse(ls('groupNames') || '{}'); } catch { return {}; } }
 export const myName = (code = group.code) => (code ? groupNames()[code] : '') || '';
@@ -36,6 +36,11 @@ function rememberGroup(code, name) {
   const list = joinedGroups().filter(g => g.code !== code);
   list.unshift({ code, name: name || 'Grup' });
   lsSet('groups', JSON.stringify(list.slice(0, 10)));
+}
+// Bu grupta henüz sunucuya gönderilmemiş kayıt sayısı (gruptan çıkmadan önce uyarmak için)
+export async function unsentCount(code) {
+  if (code === group.code) return (await db.getAll('outbox')).length;
+  return db.countIn('rastgele-g-' + code, 'outbox');
 }
 export async function leaveGroup(code) {
   lsSet('groups', JSON.stringify(joinedGroups().filter(g => g.code !== code)));
@@ -84,7 +89,7 @@ export async function enterGroup(code, onChange) {
   group.name = joinedGroups().find(g => g.code === code)?.name || 'Grup';
   db.use('rastgele-g-' + code);
   db.onWrite(queueChange);
-  group.pending = (await db.getAll('outbox')).length;
+  await countQueue();
   // Grup adını sunucudan al (sunucu uyuyorsa sonra gelir)
   api(`/api/g/${code}`).then(info => { group.name = info.name; group.online = true; rememberGroup(code, info.name); listener({ info: true }); })
     .catch(e => { if (e.status === 404) listener({ error: e.message }); });
@@ -100,7 +105,7 @@ export async function enterGroup(code, onChange) {
 async function queueChange(store, op, value) {
   const item = { k: `${store}:${value.id}`, store, id: value.id, op, at: Date.now() };
   await db.put('outbox', item);
-  group.pending = (await db.getAll('outbox')).length;
+  await countQueue();
   listener({ queued: true });
   sync();
 }
@@ -113,55 +118,96 @@ async function uploadPhoto(blob, id) {
   fd.append('upload_preset', c.preset);
   fd.append('folder', `rastgele/${group.code}`);
   const res = await fetch(`https://api.cloudinary.com/v1_1/${c.cloud}/image/upload`, { method: 'POST', body: fd });
-  const j = await res.json();
-  if (!res.ok || !j.secure_url) throw new Error(j.error?.message || 'Fotoğraf yüklenemedi');
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.secure_url) throw Object.assign(new Error(j.error?.message || 'Fotoğraf yüklenemedi'), { status: res.status });
   return j.secure_url.replace('/upload/', '/upload/c_limit,w_1280,q_auto,f_auto/');
 }
 
-// Sıradakileri gönder
+// Kalıcı hata: tekrar denemenin anlamı yok (ör. kayıt çok büyük, geçersiz). Ağ hatası / sunucu uyuyor ise tekrar denenir.
+const permanent = e => e?.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+const photoList = d => (Array.isArray(d.photos) && d.photos.length ? d.photos : (d.photo || d.photoUrl ? [{ id: 'p0', blob: d.photo || null, url: d.photoUrl || null }] : []));
+
+// Yüklenen fotoğrafın adresini kaydın EN GÜNCEL haline yaz (yükleme sürerken yapılan düzenleme kaybolmasın)
+async function setPhoto(id, pid, patch) {
+  const cur = await db.get('catches', id);
+  if (!cur) return;
+  const photos = photoList(cur).map(p => (p.id === pid ? { ...p, ...patch } : p));
+  await db.put('catches', { ...cur, photos, photoUrl: photos.find(p => p.url)?.url || null }, { silent: true });
+}
+
+// Tek kaydı gönder
+async function sendOne(q) {
+  if (q.op === 'delete') {
+    await api(`/api/g/${group.code}/${q.store}/${encodeURIComponent(q.id)}?by=${encodeURIComponent(myName())}`, { method: 'DELETE' });
+    return;
+  }
+  let doc = await db.get(q.store, q.id);
+  if (!doc) return;
+  if (q.store === 'catches' && photoReady()) {
+    // Fotoğrafları sırayla yükle; her başarılı yükleme hemen kaydedilir (yarıda kalırsa baştan yüklenmez)
+    for (const p of photoList(doc)) {
+      if (!(p.blob instanceof Blob) || p.url || p.failed) continue;
+      try { await setPhoto(doc.id, p.id, { url: await uploadPhoto(p.blob, `${doc.id}-${p.id}`) }); }
+      catch (e) { if (permanent(e)) await setPhoto(doc.id, p.id, { failed: true }); else throw e; }
+    }
+    doc = await db.get(q.store, q.id);
+    if (!doc) return;
+  }
+  const { photo, ...rest0 } = doc;
+  // Sunucuya fotoğraf dosyası değil, yalnız adresleri gider
+  const rest = Array.isArray(rest0.photos) ? { ...rest0, photos: rest0.photos.map(({ blob, failed, ...p }) => p).filter(p => p.url) } : rest0;
+  await api(`/api/g/${group.code}/${q.store}/${encodeURIComponent(q.id)}`, { method: 'PUT', body: JSON.stringify({ doc: rest, by: myName() }) });
+}
+
+// Sıradakileri gönder. Tek bir hatalı kayıt sırayı kilitlemez: kalıcı hatada kenara ayrılır ("gönderilemedi"),
+// ağ hatasında durulur (sonra tekrar denenir).
 async function flush() {
-  const queue = (await db.getAll('outbox')).sort((a, b) => a.at - b.at);
+  const queue = (await db.getAll('outbox')).filter(q => !q.failed).sort((a, b) => a.at - b.at);
+  let netErr = null;
   for (const q of queue) {
-    if (q.op === 'delete') {
-      await api(`/api/g/${group.code}/${q.store}/${encodeURIComponent(q.id)}?by=${encodeURIComponent(myName())}`, { method: 'DELETE' });
-    } else {
-      let doc = await db.get(q.store, q.id);
-      if (!doc) { await db.remove('outbox', q.k, { silent: true }); continue; }
-      if (q.store === 'catches' && photoReady()) {
-        // Tüm fotoğraflar: internete yüklenmemiş olanları yükle (eski tek fotoğraflı kayıtlar da)
-        let photos = Array.isArray(doc.photos) && doc.photos.length ? doc.photos
-          : (doc.photo || doc.photoUrl ? [{ id: 'p0', blob: doc.photo || null, url: doc.photoUrl || null }] : []);
-        let changed = false;
-        photos = await Promise.all(photos.map(async p => {
-          if (p.blob instanceof Blob && !p.url) { changed = true; return { ...p, url: await uploadPhoto(p.blob, `${doc.id}-${p.id}`) }; }
-          return p;
-        }));
-        if (changed) { doc = { ...doc, photos, photoUrl: photos[0]?.url || null }; await db.put('catches', doc, { silent: true }); }
-      }
-      const { photo, ...rest0 } = doc;
-      // Sunucuya fotoğraf dosyası değil, yalnız adresleri gider
-      const rest = Array.isArray(rest0.photos) ? { ...rest0, photos: rest0.photos.map(({ blob, ...p }) => p).filter(p => p.url) } : rest0;
-      await api(`/api/g/${group.code}/${q.store}/${encodeURIComponent(q.id)}`, { method: 'PUT', body: JSON.stringify({ doc: rest, by: myName() }) });
+    try { await sendOne(q); }
+    catch (e) {
+      if (permanent(e)) { await db.put('outbox', { ...q, failed: true, error: e.message || String(e) }, { silent: true }); continue; }
+      netErr = e; break;
     }
     // Bu arada aynı kayıt yeniden değiştiyse sıradan silme
     const now = await db.get('outbox', q.k);
     if (now && now.at === q.at) await db.remove('outbox', q.k, { silent: true });
   }
-  group.pending = (await db.getAll('outbox')).length;
+  await countQueue();
+  if (netErr) throw netErr;
 }
+async function countQueue() {
+  const all = await db.getAll('outbox');
+  group.failed = all.filter(q => q.failed).length;
+  group.pending = all.length - group.failed;
+}
+// Gönderilemeyen kayıtları tekrar dene (ör. not kısaltıldıktan sonra)
+export async function retryFailed() {
+  for (const q of await db.getAll('outbox')) if (q.failed) await db.put('outbox', { ...q, failed: false, error: null }, { silent: true });
+  await countQueue();
+  return sync();
+}
+export const failedItems = async () => (await db.getAll('outbox')).filter(q => q.failed);
 
 // Sunucudaki yenilikleri al
+const STORE_OK = new Set(['spots', 'catches']);
 async function pull() {
   const meta = (await db.get('meta', 'since')) || { k: 'since', v: 0 };
   const first = !meta.v;
-  const pendingKeys = new Set((await db.getAll('outbox')).map(q => q.k));
+  const pendingKeys = new Set((await db.getAll('outbox')).filter(q => !q.failed).map(q => q.k));
   const fresh = [];
-  let since = meta.v, more = true, changed = false;
+  let since = meta.v, after = '', more = true, changed = false;
   while (more) {
-    const r = await api(`/api/g/${group.code}/changes?since=${since}`);
+    const r = await api(`/api/g/${group.code}/changes?since=${since}${after ? `&after=${encodeURIComponent(after)}` : ''}`);
     for (const it of r.items) {
+      if (!STORE_OK.has(it.store) || !it.id) continue;
       if (pendingKeys.has(`${it.store}:${it.id}`)) continue; // telefondaki yeni hali gönderilmeyi bekliyor
-      if (it.deleted) { if (await db.get(it.store, it.id)) { changed = true; await db.remove(it.store, it.id, { silent: true }); } continue; }
+      if (it.deleted) {
+        const old = await db.get(it.store, it.id);
+        if (old) { changed = true; await db.toTrash(it.store, old, it.by); await db.remove(it.store, it.id, { silent: true }); }
+        continue;
+      }
       const local = await db.get(it.store, it.id);
       if (local && local.updatedAt === it.updatedAt) continue; // zaten güncel
       const doc = { ...it.doc, by: it.createdBy || it.by, editedBy: it.by, updatedAt: it.updatedAt };
@@ -174,27 +220,33 @@ async function pull() {
       changed = true;
       if (!first && it.by && it.by !== myName()) fresh.push({ ...it, doc, isNew: !local });
     }
-    since = r.now; more = r.more;
+    since = r.now; after = r.after || ''; more = r.more;
   }
   await db.put('meta', { k: 'since', v: since }, { silent: true });
   return { changed, fresh };
 }
 
-let syncing = null;
+let syncing = null, again = false;
 export function sync() {
   if (!group.code || !groupReady()) return Promise.resolve();
-  if (syncing) return syncing;
+  if (syncing) { again = true; return syncing; } // bu sırada gelen değişiklik bittikten hemen sonra gönderilir
   syncing = (async () => {
+    const failedBefore = group.failed;
     try {
-      await flush();
+      // Gönderme hatası, yenilikleri almayı engellemesin
+      let sendErr = null;
+      try { await flush(); } catch (e) { sendErr = e; }
       const { changed, fresh } = await pull();
       group.online = true; group.lastSync = Date.now();
       hello();
-      listener({ changed, fresh });
+      listener({ changed, fresh, failedNew: group.failed > failedBefore, sendErr: !!sendErr });
     } catch (e) {
       group.online = false;
       listener({ offline: true, error: e.status === 404 ? e.message : null });
-    } finally { syncing = null; }
+    } finally {
+      syncing = null;
+      if (again) { again = false; setTimeout(sync, 0); }
+    }
   })();
   return syncing;
 }
