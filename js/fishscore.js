@@ -10,7 +10,7 @@
 //
 // Ölçek: sık görülen "normal" şartlar (ılık su, hafif rüzgar, hafif dalga) küçük artı verir, böylece sıradan bir
 // saat "Orta" (≈5–6) kalır. Yeşil (≥6.5) için güçlü etkenlerin bir araya gelmesi gerekir: alacakaranlık,
-// fırtına sonrası bulanık su, en uygun su sıcaklığı gibi. (Kasım/Marmara benzetiminde saatlerin ~%33'ü yeşil,
+// fırtına sonrası bulanık su, en uygun su sıcaklığı gibi. (Bir yıllık benzetimde saatlerin denizde ~%19'u, gölde ~%12'si yeşil,
 // bunların çoğu alacakaranlık; "Çok iyi" ≈ %2.)
 
 export const WATER_TYPES = {
@@ -66,23 +66,34 @@ export function noonElevation(date, lat) {
 
 // Işık evresi. "Öğle": güneşin gerçek tepe saati (doğuş–batış ortası) ±2 saat ve güneş yeterince yüksek
 // (kışın güneş alçakta, ~25°: öğle güneşi balığı derine itmez).
-function lightPhase(date, suns, midMin = 30, lat = 41) {
+// Dönen: { phase: etiket (türler için), base: alacakaranlık dışındaki evre, near: doğuş/batışa uzaklık (saat) }
+function lightInfo(date, suns, midMin = 30, lat = 41) {
   const sun = suns.find(s => s.rise.toDateString() === date.toDateString());
   if (!sun) return null;
   const t = date.getTime() + midMin * 60000; // zaman diliminin ortası
   const near = Math.min(Math.abs(t - sun.rise.getTime()), Math.abs(t - sun.set.getTime())) / 3600000;
-  if (near <= 1.5) return 'twilight';
-  if (t < sun.rise.getTime() || t > sun.set.getTime()) return 'night';
   const noon = (sun.rise.getTime() + sun.set.getTime()) / 2;
-  return Math.abs(t - noon) <= 2 * 3600e3 && noonElevation(date, lat) >= 35 ? 'midday' : 'day';
+  const base = t < sun.rise.getTime() || t > sun.set.getTime() ? 'night'
+    : Math.abs(t - noon) <= 2 * 3600e3 && noonElevation(date, lat) >= 35 ? 'midday' : 'day';
+  return { phase: near <= 1.5 ? 'twilight' : base, base, near };
 }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// Parçalı doğrusal eğri: [[x, y], ...] (basamak yerine yumuşak geçiş)
+function curve(pts, x) {
+  if (x <= pts[0][0]) return pts[0][1];
+  for (let k = 1; k < pts.length; k++) if (x <= pts[k][0]) { const [x0, y0] = pts[k - 1], [x1, y1] = pts[k]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0); }
+  return pts[pts.length - 1][1];
+}
+const r1 = v => Math.round(v * 10) / 10;
+// Göl suyu sıcaklığının puana etkisi (sazan, kızılkanat gibi ılık su balıkları: 17–26 °C en iyi, 29'a kadar beslenir)
+const LAKE_TEMP = [[4, -1.5], [8, -0.5], [12, 0], [17, 1], [26, 1], [29, 0], [31, -0.5]];
 
 // ——— Tatlı su sıcaklığı tahmini ———
 // Göl büyüklüğü: küçük (gölet, sığ) havaya birkaç günde, büyük/derin göl haftalarca geriden yetişir.
 export const LAKE_SIZES = {
-  small: { label: 'Küçük (gölet, sığ)', tau: 4, bonus: 1.5, chill: 1 },
-  medium: { label: 'Orta', tau: 10, bonus: 2.5, chill: 0.7 },
-  large: { label: 'Büyük / derin', tau: 25, bonus: 2.5, chill: 0.5 },
+  small: { label: 'Küçük (gölet, sığ)', tau: 4, bonus: 2.5 },
+  medium: { label: 'Orta', tau: 10, bonus: 2.5 },
+  large: { label: 'Büyük / derin', tau: 25, bonus: 2.5 },
 };
 // Bilinen göller (derinlik ve büyüklüğe göre)
 const KNOWN_LAKES = [
@@ -93,12 +104,19 @@ const norm = s => (s || '').toLocaleLowerCase('tr').replace(/ı/g, 'i').normaliz
 // Hangi büyüklük? Elle seçildiyse o, sonra bilinen göller, sonra haritadan ölçülen alan, yoksa orta.
 export function lakeSizeFor(place, guess) {
   if (LAKE_SIZES[place?.lakeSize]) return { size: place.lakeSize, source: 'manual' };
-  for (const name of [guess?.name, place?.name]) {
-    const n = norm(name);
-    if (!n) continue;
-    for (const [size, list] of KNOWN_LAKES) if (list.some(x => n.includes(x))) return { size, source: 'known' };
-  }
+  // Önce haritadaki gölün adı, sonra ölçülen alan; meranın kendi adı en son (köy/ilçe adı göl sanılmasın).
+  // Tam kelime aranır: "Çubuklu" ≠ "Çubuk".
+  const known = name => {
+    const words = (name || '').split(/[^\p{L}]+/u).map(norm).filter(Boolean);
+    const joined = words.join('');
+    for (const [size, list] of KNOWN_LAKES) if (list.some(x => words.includes(x) || (x.length >= 8 && joined.includes(x)))) return size;
+    return null;
+  };
+  const k1 = known(guess?.name);
+  if (k1) return { size: k1, source: 'known' };
   if (LAKE_SIZES[guess?.size]) return { size: guess.size, source: 'auto', areaKm2: guess.areaKm2 };
+  const k2 = known(place?.name);
+  if (k2) return { size: k2, source: 'known' };
   return { size: 'medium', source: 'default' };
 }
 
@@ -143,7 +161,10 @@ function freshWaterTemp(hours, i, type, env, date) {
   if (m != null) return m;
   const t = avg(hours.slice(Math.max(0, i - 120), i + 1).map(h => h.temp));
   if (t == null) return null;
-  return type === 'river' ? Math.max(1, 11 + 0.75 * (t - 11)) : Math.max(4, t);
+  if (type === 'river') return Math.max(1, 11 + 0.75 * (t - 11));
+  // Modelle aynı yaz güneşi terimi (yedek yol ile model arasında puan oynamasın)
+  const doy = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 864e5);
+  return Math.max(4, t + (LAKE_SIZES[env?.size] || LAKE_SIZES.medium).bonus * Math.max(0, Math.sin(Math.PI * (doy - 100) / 180)));
 }
 
 // Aynı olayın (fırtına: rüzgar + dalga + lodos) üst üste cezalandırılmaması:
@@ -166,90 +187,101 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     const add = (v, text) => { s += v; reasons.push([v, text]); };
     const past = n => hours.slice(Math.max(0, i - n), i);
 
-    // 1) Işık
-    const light = lightPhase(r.date, suns, mid, lat);
-    if (light === 'twilight') add(type === 'sea' ? 2 : 1.8, 'Alacakaranlık: avlanma saati');
-    else if (light === 'night') add(type === 'sea' ? 0.5 : 0.3, 'Gece');
-    else if (light === 'midday') {
-      if ((r.cloud ?? 0) >= 70) add(0.3, 'Kapalı hava, öğle güneşi yok');
-      else add(noonElevation(r.date, lat) >= 50 ? -0.8 : -0.4, 'Öğle güneşi, balık derine çekilir');
-    } else if (light === 'day' && type !== 'sea' && (r.cloud ?? 0) >= 70) add(0.5, 'Kapalı hava');
+    // 1) Işık. Alacakaranlık keskin bir sınır değil: doğuş/batışa 1 saatten yakınsa tam, 2 saatte biter.
+    const li = lightInfo(r.date, suns, mid, lat);
+    const light = li?.phase ?? null;
+    if (li) {
+      const cloudy = clamp(((r.cloud ?? 0) - 50) / 30, 0, 1);       // %50'den %80'e kapanır
+      const overcast = (type === 'sea' ? 0.3 : 0.5) * cloudy;
+      // Gölde gündüz dip avı yapılır: öğle güneşi cezası yarı
+      const sunPen = (noonElevation(r.date, lat) >= 50 ? -0.8 : -0.4) * (type === 'lake' ? 0.5 : 1);
+      const base = li.base === 'night' ? (type === 'sea' ? 0.5 : 0.3)
+        : li.base === 'midday' ? sunPen + (overcast - sunPen) * cloudy : overcast;
+      const tw = clamp(2 - li.near, 0, 1);
+      const pts = r1(base + tw * ((type === 'sea' ? 2 : 1.8) - base));
+      add(pts, tw >= 0.95 ? 'Alacakaranlık: avlanma saati' : tw > 0 ? 'Alacakaranlığa yakın'
+        : li.base === 'night' ? 'Gece' : li.base === 'midday' && pts < 0 ? 'Öğle güneşi, balık derine çekilir' : 'Kapalı hava');
+    }
 
     // 2) Su sıcaklığı
     const wt = type === 'sea' ? (r.sst ?? avg(past(24).map(h => h.sst))) : freshWaterTemp(hours, i, type, env, r.date);
     const waterTemp = wt, waterTempEstimated = type !== 'sea' || r.sst == null;
+    let cooled = false;
     if (wt != null) {
       if (type === 'sea') {
         if (wt >= 14 && wt <= 21) add(0.6, `Su ${wt.toFixed(0)} °C: ideal aralık`);
-        else if (wt < 9) add(-0.8, `Su çok soğuk (${wt.toFixed(0)} °C)`);
+        else if (wt < 7) add(-0.5, `Su çok soğuk (${wt.toFixed(1)} °C)`); // kış levreği/mezgit 7–9 °C'de de avlanır
         else if (wt > 26) add(-0.3, `Su çok sıcak (${wt.toFixed(0)} °C)`);
         else add(0, `Su ${wt.toFixed(0)} °C`);
       } else {
-        // Göl: sazan, kızılkanat gibi balıklar 25–26 °C'de de iyi beslenir (yeni su modeli yazın gölü 25–26 °C bulur)
-        if (wt >= 16 && wt <= (type === 'lake' ? 26 : 24)) add(1, `Su ~${wt.toFixed(0)} °C: balık aktif`);
+        if (type === 'lake') {
+          const v = r1(curve(LAKE_TEMP, wt));
+          add(v, v >= 0.7 ? `Su ~${wt.toFixed(0)} °C: balık aktif` : v <= -1 ? `Su çok soğuk (~${wt.toFixed(0)} °C), balık uyuşuk`
+            : v < 0 ? (wt < 12 ? `Su soğuk (~${wt.toFixed(0)} °C)` : `Su çok sıcak (~${wt.toFixed(0)} °C)`) : `Su ~${wt.toFixed(0)} °C: ılıyor`);
+        } else if (wt >= 16 && wt <= 22) add(1, `Su ~${wt.toFixed(0)} °C: balık aktif`);
         else if (wt < 6) add(-1.5, `Su çok soğuk (~${wt.toFixed(0)} °C), balık uyuşuk`);
         else if (wt < 10) add(-0.5, `Su soğuk (~${wt.toFixed(0)} °C)`);
-        else if (wt > 27) add(-0.5, `Su çok sıcak (~${wt.toFixed(0)} °C), oksijen az`);
+        else if (wt > 24) add(-0.5, `Su ılık (~${wt.toFixed(0)} °C), oksijen azalır`);
         else add(0, `Su ~${wt.toFixed(0)} °C`);
-        // Ani soğuma
+        // Ani soğuma: su modeli soğumayı zaten kısmen gösterir; kıyı sığlığı için küçük ek ceza
         const recent = avg(hours.slice(Math.max(0, i - 48), i + 1).map(h => h.temp));
         const before = avg(hours.slice(Math.max(0, i - 120), Math.max(0, i - 48)).map(h => h.temp));
-        // Kıyı suyu çabuk soğur ama büyük/derin gölde etki daha küçük
-        const chill = type === 'river' ? 1 : (LAKE_SIZES[env?.size] || LAKE_SIZES.medium).chill;
-        if (recent != null && before != null && before - recent >= 4) add(-Math.round(chill * 10) / 10, 'Hava aniden soğudu, kıyı suyu serinler');
+        if (i >= 96 && recent != null && before != null && before - recent >= 4 && wt < 24) { cooled = true; add(-0.5, 'Hava aniden soğudu, kıyı suyu serinler'); }
       }
     }
 
     // 3) Dalga (deniz). Ceza aşağıda rüzgarla birlikte "deniz durumu" olarak eklenir (aynı fırtına iki kez sayılmasın).
+    // Basamak yok: 1 m'den sonra ceza yavaş yavaş artar.
     let waveNeg = 0, waveNegText = '';
     if (type === 'sea' && r.wave != null) {
       if (r.wave < 0.15) add(0.2, 'Deniz çarşaf, su berrak');
-      else if (r.wave < 0.8) add(0.5, `Hafif dalga (${r.wave.toFixed(1)} m), su hareketli`);
-      else if (r.wave < 1.25) add(0, `Dalga ${r.wave.toFixed(1)} m`);
-      else if (r.wave < 2) { waveNeg = -1.5; waveNegText = `Dalga yüksek (${r.wave.toFixed(1)} m)`; }
-      else { waveNeg = -3; waveNegText = `Dalga tehlikeli (${r.wave.toFixed(1)} m)`; danger = true; }
+      else if (r.wave < 1) add(r1(0.5 * clamp((1 - r.wave) / 0.2, 0, 1)), `Hafif dalga (${r.wave.toFixed(1)} m), su hareketli`);
+      else { waveNeg = -r1(Math.min(3, (r.wave - 1) * 3)); waveNegText = r.wave >= 2 ? `Dalga tehlikeli (${r.wave.toFixed(1)} m)` : `Dalga yüksek (${r.wave.toFixed(1)} m)`; }
+      if (r.wave >= 2) danger = true;
       // Fırtına sonrası bulanık su
       const maxPast = max(past(36).map(h => h.wave));
-      if (maxPast != null && maxPast >= 1.5 && r.wave < 1) add(0.8, 'Fırtına sonrası bulanık su (levrek için iyi)');
+      const murky = r1(0.8 * clamp((1.2 - r.wave) / 0.4, 0, 1));
+      if (maxPast != null && maxPast >= 1.5 && murky > 0) add(murky, 'Fırtına sonrası bulanık su (levrek için iyi)');
     }
 
-    // 4) Rüzgar
+    // 4) Rüzgar (25 km/s'ten sonra ceza yavaş yavaş artar)
     let seaNeg = waveNeg;
     if (r.wind == null && waveNeg) add(waveNeg, waveNegText);
     if (r.wind != null) {
       if (type === 'sea') {
-        let windNeg = 0, windNegText = '';
-        if (r.wind < 5) add(0, 'Rüzgar yok');
-        else if (r.wind < 20) add(0.3, 'Rüzgar hafif-orta');
-        else if (r.wind < 30) add(0, 'Rüzgar orta-sert');
-        else if (r.wind < 40) { windNeg = -1; windNegText = 'Rüzgar sert, atış zor'; }
-        else { windNeg = -2.5; windNegText = 'Rüzgar çok sert'; danger = true; }
+        const windNeg = r.wind < 25 ? 0 : -r1(Math.min(2.5, (r.wind - 25) / 6));
+        const windNegText = r.wind >= 40 ? 'Rüzgar çok sert' : windNeg ? 'Rüzgar sert, atış zor' : '';
+        if (r.wind >= 5 && r.wind < 20) add(0.3, 'Rüzgar hafif-orta');
+        if (r.wind >= 40) danger = true;
         seaNeg = joinNeg(waveNeg, windNeg);
-        if (seaNeg) add(Math.round(seaNeg * 10) / 10, [windNegText, waveNegText].filter(Boolean).join(' · '));
+        if (seaNeg) add(r1(seaNeg), [windNegText, waveNegText].filter(Boolean).join(' · '));
       } else {
-        if (r.wind < 4) add(0, 'Su ayna gibi, balık temkinli');
-        else if (r.wind < 20) add(0.3, 'Hafif rüzgar, suda kırışıklık');
-        else if (r.wind < 30) add(0, 'Rüzgar orta-sert');
-        else { add(-1.5, 'Rüzgar sert'); if (r.wind >= 40) danger = true; }
+        if (r.wind >= 4 && r.wind < 20) add(0.3, 'Hafif rüzgar, suda kırışıklık');
+        else if (r.wind >= 25) { seaNeg = -r1(Math.min(1.5, (r.wind - 25) * 0.15)); add(seaNeg, 'Rüzgar sert'); }
+        if (r.wind >= 40) danger = true;
       }
     }
-    if (r.gust != null && r.gust >= 60) { add(-0.5, `Hamle ${Math.round(r.gust)} km/s`); danger = true; }
+    if (r.gust != null && r.gust >= 60) { danger = true; if (seaNeg > -0.5) add(-0.5, `Hamle ${Math.round(r.gust)} km/s`); }
 
     // 5) Yağış ve fırtına
     if (r.code != null && r.code >= 95) { add(-2.5, 'Şimşek/fırtına riski'); danger = true; }
     else if (r.precip != null && r.precip >= 5) add(-1, 'Kuvvetli yağış');
-    else if (type !== 'sea' && r.precip != null && r.precip >= 0.2 && r.precip < 2) add(0.4, 'Hafif yağmur');
+    let flood = 0;
     if (type === 'river') {
-      const rain24 = sum(past(24).map(h => h.precip));
-      if (rain24 >= 15) add(-1.2, 'Son 24 saatte çok yağış: dere kabarık/bulanık');
+      // Dere yağışı günlerce taşır: son 24 saat tam, önceki iki gün yarım sayılır
+      flood = sum(hours.slice(Math.max(0, i - 23), i + 1).map(h => h.precip)) + 0.5 * sum(hours.slice(Math.max(0, i - 71), Math.max(0, i - 23)).map(h => h.precip));
+      if (flood >= 40) { add(-2.5, 'Çok yağış: sel / ani kabarma riski, dere kenarından uzak durun'); danger = true; }
+      else if (flood >= 15) add(-1.2, 'Son günlerde çok yağış: dere kabarık/bulanık');
+      else if (flood >= 8) add(-0.5, 'Yağış sonrası su biraz bulanık');
     }
+    if (type !== 'sea' && !(r.code >= 95) && r.precip != null && r.precip >= 0.2 && r.precip < 2 && flood < 8) add(0.4, 'Hafif yağmur');
 
     // 6) Basınç (zayıf kanıt, düşük ağırlık)
     const p3 = hours[i - 3]?.pressure, p24 = hours[i - 24]?.pressure;
-    if (r.pressure != null && p24 != null && r.pressure - p24 >= 6) add(-0.6, 'Soğuk cephe sonrası basınç yükseldi');
+    if (r.pressure != null && p24 != null && r.pressure - p24 >= 6) { if (!cooled) add(-0.6, 'Soğuk cephe sonrası basınç yükseldi'); } // cephe bir kez sayılır
     else if (r.pressure != null && p3 != null) {
       const d = r.pressure - p3;
-      if (d <= -0.6 && d >= -2.5) add(0.4, 'Basınç yavaş düşüyor');
+      if (d <= -1 && d >= -2.5) add(0.4, 'Basınç yavaş düşüyor'); // -1: günlük doğal basınç dalgası (±0.5 hPa) sayılmasın
       else if (d < -2.5) add(-0.3, 'Basınç hızlı düşüyor');
       else if (d >= 2) add(-0.4, 'Basınç hızlı yükseliyor');
     }
@@ -261,12 +293,15 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     const moon = moonPhase(r.date);
     if (Math.min(Math.abs(moon.age - 14.77), moon.age, 29.53 - moon.age) < 2) add(0.3, moon.name);
 
-    const score = Math.round(Math.max(0, Math.min(10, s)) * 10) / 10;
-    const w = windScore(r, i, hours, type, lat, lng, shore);
+    // Tehlikeli saat hiçbir zaman iyi görünmez: puan en fazla 2.9 (kırmızı)
+    const cap = v => r1(Math.max(0, Math.min(danger ? 2.9 : 10, v)));
+    const score = cap(s);
+    const air24 = avg(hours.slice(Math.max(0, i - 23), i + 1).map(h => h.temp));
+    const w = windScore(r, i, hours, type, lat, lng, shore, { dT: wt != null && air24 != null ? air24 - wt : null, cooled });
     // Birleşik puan: balık puanı + sadece rüzgar yönü/bölge etkisi
     // Yön/bölge cezası (ör. sert lodos) deniz durumu cezasıyla birlikte: aynı fırtına üçüncü kez tam sayılmaz
     const dirAdj = w.dir < 0 && seaNeg < 0 ? joinNeg(seaNeg, w.dir) - seaNeg : w.dir;
-    const comboScore = Math.round(Math.max(0, Math.min(10, s + dirAdj)) * 10) / 10;
+    const comboScore = cap(s + dirAdj);
     return { ...r, waterTemp, waterTempEstimated, score, comboScore, dirNotes: w.dirNotes, windScore: w.score, windNotes: w.notes, reasons: reasons.filter(([v]) => v !== 0).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0])), danger, light };
   }
 }
@@ -281,9 +316,10 @@ const isLodos = d => d != null && inSector(d, 202.5, 247.5);
 const isNorthCold = d => d != null && inSector(d, 292.5, 67.5);   // karayel, yıldız, poyraz
 const isSouthWarm = d => d != null && inSector(d, 112.5, 247.5);  // keşişleme, kıble, lodos
 // Boğaz: Kadıköy/Sarayburnu'ndan Rumeli/Anadolu Feneri'ne kadar (Kilyos gibi Karadeniz kıyısı hariç)
-const inBosphorus = (lat, lng) => lat >= 40.99 && lat <= 41.22 && lng >= 28.97 && lng <= 29.15;
+const inBosphorus = (lat, lng) => lat >= 40.99 && lat <= 41.24 && lng >= 28.97 && lng <= 29.16;
 // Marmara Denizi kıyıları (Silivri 41.07 dahil; İstanbul'un Karadeniz kıyısı 41.15+ hariç) + Boğaz
-const inMarmara = (lat, lng) => (lat >= 40.2 && lat <= 41.1 && lng >= 26.4 && lng <= 29.95) || inBosphorus(lat, lng);
+// Saros Körfezi (Ege) hariç
+const inMarmara = (lat, lng) => (lat >= 40.2 && lat <= 41.1 && lng >= 26.4 && lng <= 29.95 && !(lng < 26.95 && lat > 40.45)) || inBosphorus(lat, lng);
 
 // Rüzgarın kıyıya göre durumu. shore: suya bakış yönü (derece, 0=K); rüzgar yönü = rüzgarın geldiği yön.
 export function windRelation(windDir, shore) {
@@ -292,7 +328,8 @@ export function windRelation(windDir, shore) {
   return diff <= 60 ? 'onshore' : diff >= 120 ? 'offshore' : 'cross';
 }
 
-export function windScore(r, i, hours, type, lat, lng, shore = null) {
+// opts.dT: son 24 saatin hava ortalaması − su sıcaklığı; opts.cooled: ani soğuma zaten sayıldı
+export function windScore(r, i, hours, type, lat, lng, shore = null, opts = {}) {
   const notes = [];
   if (r.wind == null) return { score: null, notes, dir: 0, dirNotes: [] };
   let s;
@@ -311,28 +348,35 @@ export function windScore(r, i, hours, type, lat, lng, shore = null) {
     if (r.wave >= 0.2 && r.wave < 0.8) s += 0.5;
     else if (r.wave >= 1.5) { s -= 1; notes.push('Dalga yüksek'); }
   }
-  const month = r.date.getMonth() + 1;
-  const coldSeason = month >= 10 || month <= 4;
-  if (type === 'sea' && inMarmara(lat, lng) && isLodos(r.windDir) && w >= 20) {
-    s -= 1.5; dir -= 1.5; notes.push('Sert lodos: Marmara/Boğaz\'da av zorlaşır'); dirNotes.push([-1.5, 'Sert lodos: Marmara/Boğaz\'da av zorlaşır']);
+  const addDir = (v, t) => { s += v; dir += v; notes.push(t); dirNotes.push([v, t]); };
+  let lodos = false;
+  if (type === 'sea' && inMarmara(lat, lng) && isLodos(r.windDir) && w > 15) {
+    // 15 km/s'te başlar, 30'da tam (basamak yok)
+    lodos = true;
+    addDir(-r1(1.5 * clamp((w - 15) / 15, 0, 1)), 'Lodos: Marmara/Boğaz\'da av zorlaşır');
     if (inBosphorus(lat, lng)) {
       const last = hours.slice(Math.max(0, i - 12), i + 1);
-      if (last.length >= 10 && last.every(h => isLodos(h.windDir) && h.wind >= 20)) { s -= 0.5; dir -= 0.5; notes.push('12 saattir lodos: Boğaz\'da akıntı tersine dönebilir'); dirNotes.push([-0.5, '12 saattir lodos: Boğaz\'da akıntı tersine dönebilir']); }
+      const south = d => d != null && inSector(d, 157.5, 247.5); // kıble + lodos
+      if (last.length >= 10 && last.every(h => south(h.windDir) && h.wind >= 30)) addDir(-0.5, '12 saattir sert güney rüzgarı: Boğaz\'da akıntı tersine dönebilir');
     }
   }
-  if (type !== 'sea' && coldSeason && w >= 8) {
-    if (isNorthCold(r.windDir)) { s -= 1; dir -= 1; notes.push('Soğuk kuzey rüzgarı suyu soğutur'); dirNotes.push([-1, 'Soğuk kuzey rüzgarı suyu soğutur']); }
-    else if (isSouthWarm(r.windDir)) { s += 0.7; dir += 0.7; notes.push('Ilık güney rüzgarı suyu ısıtır'); dirNotes.push([0.7, 'Ilık güney rüzgarı suyu ısıtır']); }
+  // Göl/dere: rüzgarın yönü değil, havanın sudan gerçekten soğuk/ılık olması önemli
+  const dT = opts.dT;
+  if (type !== 'sea' && w >= 8 && dT != null) {
+    if (dT <= -3 && isNorthCold(r.windDir)) addDir(opts.cooled ? -0.3 : -1, 'Soğuk rüzgar suyu soğutur');
+    else if (dT >= 2 && w < 30 && isSouthWarm(r.windDir)) addDir(0.7, 'Ilık rüzgar suyu ısıtır');
   }
   const rel = windRelation(r.windDir, shore);
-  const addDir = (v, t) => { s += v; dir += v; notes.push(t); dirNotes.push([v, t]); };
-  if (rel === 'onshore' && w >= 8 && w < 30) addDir(0.6, 'Rüzgar sudan kıyınıza esiyor: yem ve balık kıyıya gelir');
-  else if (rel === 'onshore' && w >= 30) addDir(type === 'sea' ? -0.5 : -0.3, 'Sert rüzgar tam kıyınıza vuruyor: dalga ve köpük, dikkat');
-  else if (rel === 'offshore' && w >= 8) addDir(-0.4, 'Rüzgar arkanızdan (karadan) esiyor: yem açığa gider, kıyı suyu durgun');
-  if (type !== 'sea' && w >= 8 && (rel === 'onshore' || rel == null)) {
+  // Lodos cezası verildiyse kıyı yönü ayrıca sayılmaz (kuytu kıyı, rüzgar alan kıyıdan kötü çıkmasın)
+  if (!lodos) {
+    if (rel === 'onshore' && w >= 8 && w < 30) addDir(0.6, 'Rüzgar sudan kıyınıza esiyor: yem ve balık kıyıya gelir');
+    else if (rel === 'onshore' && w >= 30) addDir(type === 'sea' ? -0.5 : -0.3, 'Sert rüzgar tam kıyınıza vuruyor: dalga ve köpük, dikkat');
+    else if (rel === 'offshore' && w >= 8) addDir(-0.4, 'Rüzgar arkanızdan (karadan) esiyor: yem açığa gider, kıyı suyu durgun');
+  }
+  if (type !== 'sea' && w >= 8 && w < 30 && rel === 'onshore') {
     const last = hours.slice(Math.max(0, i - 24), i + 1).filter(h => h.windDir != null);
     const sameDir = last.length >= 20 && last.every(h => Math.abs(((h.windDir - r.windDir + 540) % 360) - 180) <= 45);
-    if (sameDir) { s += 0.3; dir += 0.3; notes.push('24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir'); dirNotes.push([0.3, '24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir']); }
+    if (sameDir) addDir(0.3, '24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir');
   }
   return { score: Math.round(Math.max(0, Math.min(10, s)) * 10) / 10, notes, dir, dirNotes };
 }
@@ -340,9 +384,9 @@ export function windScore(r, i, hours, type, lat, lng, shore = null) {
 export const scoreClass = s => s >= 6.5 ? 's-good' : s >= 4.5 ? 's-mid' : 's-bad';
 export const scoreColor = s => `var(--${s >= 6.5 ? 'good' : s >= 4.5 ? 'warn' : 'bad'})`;
 export const scoreLabel = (s, danger) => danger ? 'Tehlikeli, gitmeyin ⚠️'
-  : s >= 8 ? 'Çok iyi, hemen çık! 🎣' : s >= 6.5 ? 'İyi görünüyor' : s >= 4.5 ? 'Fena değil' : s >= 3 ? 'Zayıf' : 'Evde kal';
+  : s >= 7.5 ? 'Çok iyi, hemen çık! 🎣' : s >= 6.5 ? 'İyi görünüyor' : s >= 4.5 ? 'Orta, fena değil' : s >= 3 ? 'Zayıf' : 'Kötü, evde kal';
 
-export const scoreShort = (s, danger) => danger ? 'Tehlikeli' : s >= 8 ? 'Çok iyi' : s >= 6.5 ? 'İyi' : s >= 4.5 ? 'Orta' : s >= 3 ? 'Zayıf' : 'Kötü';
+export const scoreShort = (s, danger) => danger ? 'Tehlikeli' : s >= 7.5 ? 'Çok iyi' : s >= 6.5 ? 'İyi' : s >= 4.5 ? 'Orta' : s >= 3 ? 'Zayıf' : 'Kötü';
 
 // Belirli bir zamana en yakın saat
 export function hourAt(rows, date) {

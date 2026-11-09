@@ -51,45 +51,52 @@ export const SPECIES_MODEL = [
 export function speciesScores(r, type) {
   const month = r.date.getMonth() + 1;
   return SPECIES_MODEL.filter(sp => sp.water.includes(type)).map(sp => {
-    let s = r.score;
+    let adj = 0;
     const notes = [];
-    if (sp.best.includes(month)) { s += 1; notes.push('sezonu'); }
-    else if (!sp.ok.includes(month)) { s -= 2; notes.push('sezon dışı'); }
+    if (sp.best.includes(month)) { adj += 1; notes.push('sezonu'); }
+    else if (!sp.ok.includes(month)) { adj -= 2; notes.push('sezon dışı'); }
     const wt = r.waterTemp;
     if (wt != null) {
       const [mn, lo, hi, mx] = sp.temp;
-      if (wt >= lo && wt <= hi) { s += 1; notes.push('su ideal'); }
-      else if (wt < mn || wt > mx) { s -= 2; notes.push(wt < mn ? 'su soğuk' : 'su sıcak'); }
+      if (wt >= lo && wt <= hi) { adj += 1; notes.push('su ideal'); }
+      else if (wt < mn || wt > mx) { adj -= 2; notes.push(wt < mn ? 'su soğuk' : 'su sıcak'); }
     }
     if (r.light) {
-      if (sp.light.includes(r.light)) s += 0.5;
-      else { s -= 0.7; notes.push('saati değil'); }
+      // Öğle, gündüz balığı için "saati"dir (öğle cezası genel puanda zaten var)
+      const L = r.light === 'midday' ? 'day' : r.light;
+      if (sp.light.includes(L)) adj += r.light === 'midday' ? 0 : 0.5;
+      else { adj -= 0.7; notes.push('saati değil'); }
     }
     if (type === 'sea' && r.wave != null) {
-      if (sp.waves === 'likes' && r.wave >= 0.3 && r.wave <= 1.2) { s += 0.7; notes.push('dalga iyi'); }
-      if (sp.waves === 'calm' && r.wave > 0.6) { s -= 0.8; notes.push('su fazla dalgalı'); }
+      if (sp.waves === 'likes' && r.wave >= 0.3 && r.wave <= 1.2) { adj += 0.7; notes.push('dalga iyi'); }
+      if (sp.waves === 'calm' && r.wave > 0.6) { adj -= 0.8; notes.push('su fazla dalgalı'); }
     }
-    return { ...sp, score: Math.round(Math.max(0, Math.min(10, s)) * 10) / 10, notes };
-  }).sort((a, b) => b.score - a.score);
+    // Artılar tavana yaklaştıkça küçülür: iyi günde bütün türler 10'da toplanmasın
+    const raw = r.score + (adj > 0 ? adj * (10 - r.score) / 6 : adj);
+    return { ...sp, raw, score: Math.round(Math.max(0, Math.min(r.danger ? 2.9 : 10, raw)) * 10) / 10, notes };
+  }).sort((a, b) => b.raw - a.raw);
 }
 
 // Bir günün en iyi zaman aralığı (en yüksek skora yakın ardışık saatler)
-export function bestWindow(dayRows) {
-  if (!dayRows.length) return null;
-  const top = dayRows.reduce((b, r) => (r.score > b.score ? r : b));
+// Tehlikeli saatler hiç önerilmez; val: hangi puanla (balık / balık+rüzgar) seçileceği
+export function bestWindow(dayRows, val = r => r.score) {
+  const safe = dayRows.filter(r => !r.danger);
+  if (!safe.length) return null;
+  const top = safe.reduce((b, r) => (val(r) > val(b) ? r : b));
   const i = dayRows.indexOf(top);
   let a = i, b = i;
-  while (a > 0 && dayRows[a - 1].score >= top.score - 0.6) a--;
-  while (b < dayRows.length - 1 && dayRows[b + 1].score >= top.score - 0.6) b++;
-  return { from: dayRows[a].date, to: new Date(dayRows[b].date.getTime() + 3600e3), score: top.score, peak: top };
+  const ok = r => !r.danger && val(r) >= val(top) - 0.6;
+  while (a > 0 && ok(dayRows[a - 1])) a--;
+  while (b < dayRows.length - 1 && ok(dayRows[b + 1])) b++;
+  return { from: dayRows[a].date, to: new Date(dayRows[b].date.getTime() + 3600e3), score: val(top), peak: top };
 }
 
 const hm = d => d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
 
 // İnsan gibi konuşan öneri metni
-export function adviceText({ dayRows, sel, type, place }) {
-  const win = bestWindow(dayRows);
-  if (!win) return [];
+export function adviceText({ dayRows, sel, type, place, val = r => r.score }) {
+  const win = bestWindow(dayRows, val);
+  if (!win) return dayRows.length ? ['⚠️ <b>Bugün kalan saatlerin hepsinde tehlikeli şartlar var</b> (sert rüzgar, yüksek dalga, fırtına ya da sel riski). Başka bir gün seçin.'] : [];
   const out = [];
   const peak = win.peak;
   const sp = speciesScores(peak, type).slice(0, 2);
@@ -101,9 +108,9 @@ export function adviceText({ dayRows, sel, type, place }) {
   if (peak.windDir != null && peak.wind >= 5) {
     const w = `${windName(peak.windDir, true)} (${Math.round(peak.wind)} km/s)`;
     if (type === 'sea') {
-      out.push(`💨 Rüzgar ${w} esiyor. Uzak atış için rüzgarı arkanıza alın. Levrek ve karagöz için rüzgarın vurduğu, köpüklü kıyı daha verimli olur.`);
+      out.push(`💨 O saatlerde rüzgar ${w}. Uzak atış için rüzgarı arkanıza alın. Levrek ve karagöz için rüzgarın vurduğu, köpüklü kıyı daha verimli olur.`);
     } else {
-      out.push(`💨 Rüzgar ${w} esiyor. Rüzgarın vurduğu kıyıya yem ve küçük balık toplanır; yırtıcılar oraya gelir.`);
+      out.push(`💨 O saatlerde rüzgar ${w}. Rüzgarın vurduğu kıyıya yem ve küçük balık toplanır; yırtıcılar oraya gelir.`);
     }
   } else out.push('💨 Rüzgar çok hafif; su durgun ve berrak olacağı için ince misina ve doğal renkli yemler kullanın.');
   if (peak.waterTemp != null) {
@@ -117,10 +124,10 @@ export function adviceText({ dayRows, sel, type, place }) {
   }
   if (dayRows.some(r => r.danger)) {
     const d = dayRows.filter(r => r.danger);
-    out.push(`⚠️ <b>Dikkat:</b> ${hm(d[0].date)}–${hm(new Date(d[d.length - 1].date.getTime() + 3600e3))} arası tehlikeli şartlar (dalga, rüzgar veya fırtına) bekleniyor. Kayalık ve mendirek ucundan uzak durun.`);
+    out.push(`⚠️ <b>Dikkat:</b> ${hm(d[0].date)}–${hm(new Date(d[d.length - 1].date.getTime() + 3600e3))} arasında tehlikeli saatler var (${type === 'river' ? 'sel/kabarma, rüzgar veya fırtına' : type === 'lake' ? 'sert rüzgar veya fırtına' : 'dalga, rüzgar veya fırtına'}). ${type === 'river' ? 'Kaygan ve oyulmuş dere kenarlarından, köprü altlarından uzak durun.' : type === 'lake' ? 'Açık iskele ve set üstünden uzak durun.' : 'Kayalık ve mendirek ucundan uzak durun.'}`);
   }
-  if (sel && sel !== peak && sel.score < win.score - 1.5) {
-    out.push(`ℹ️ Seçtiğiniz ${hm(sel.date)} saati (${sel.score.toFixed(1)}) en iyi saate göre zayıf; mümkünse ${hm(win.from)} civarına kaydırın.`);
+  if (sel && sel !== peak && val(sel) < win.score - 1.5) {
+    out.push(`ℹ️ Seçtiğiniz ${hm(sel.date)} saati (${val(sel).toFixed(1)}) en iyi saate göre zayıf; mümkünse ${hm(win.from)} civarına kaydırın.`);
   }
   return out;
 }

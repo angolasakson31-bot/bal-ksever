@@ -774,7 +774,7 @@ async function analyze(place, opts = {}) {
 // Su sıcaklığı nasıl tahmin edildi
 function waterNote(a) {
   if (a.type === 'sea') return 'tahmini (yakın deniz noktası)';
-  if (!a.env?.model) return 'tahmini (son 5 gün hava ort.)';
+  if (!a.env?.model) return 'tahmini (son günlerin havası)';
   if (a.type === 'river') return 'tahmini (dere: son günlerin havası)';
   return `tahmini · ${LAKE_SIZES[a.env.size].label.toLocaleLowerCase('tr')} göl, son 60 günün havası`;
 }
@@ -795,9 +795,11 @@ const windBadge = r => r.windScore == null ? '' : `<span class="wind-badge" titl
 // Sıralama türü: balık puanı (ilk puanlama) veya birleşik (balık + rüzgar yönü/bölge etkisi)
 let rankMode = ['combo', 'wind'].includes(ls('rankMode')) ? 'combo' : 'fish';
 const modeVal = r => (rankMode === 'combo' ? (r.comboScore ?? r.score) : r.score) ?? 0;
+// "En iyi" her yerde aynı kuralla: tehlikesiz saatler arasında seçili puan türüne göre en yüksek (eşitlikte erken olan)
+const bestSafe = list => { const safe = list.filter(r => !r.danger); return (safe.length ? safe : list).reduce((b, r) => (!b || modeVal(r) > modeVal(b) ? r : b), null); };
 const MODE_HELP = {
   fish: '🎣 <b>Balık puanı</b>: o anda balık tutma ihtimali. Su sıcaklığı, ışık (alacakaranlık/gece), dalga, rüzgar hızı, yağış, basınç ve ay hesaba katılır. Köşedeki 💨 rozet ayrıca rüzgar puanıdır.',
-  combo: '🎣💨 <b>Balık + rüzgar</b>: balık puanına rüzgarın <b>yönü ve bölge etkisi</b> eklenir: Boğaz/Marmara\'da sert lodos (−), uzun lodosta akıntı (−), gölde soğuk mevsimde soğuk kuzey rüzgarı (−) / ılık güney rüzgarı (+), 24 saat aynı yön (+). Rüzgar hızı balık puanında zaten olduğu için iki kez sayılmaz.',
+  combo: '🎣💨 <b>Balık + rüzgar</b>: balık puanına rüzgarın <b>yönü ve bölge etkisi</b> eklenir: Boğaz/Marmara\'da sert lodos (−), uzun lodosta akıntı (−), gölde sudan belirgin soğuk kuzey rüzgarı (−) / sudan ılık güney rüzgarı (+), rüzgarın kıyıya vurması (+). Rüzgar hızı balık puanında zaten olduğu için iki kez sayılmaz.',
 };
 
 // Kart içinde küçük 6 saatlik hava şeridi
@@ -805,14 +807,16 @@ function miniWx(a, from, hours = 24) {
   const cells = [];
   // 24 saat: ilk bakışta 6 saat görünür, sola kaydırınca devamı (kartlarda yalnız 6 saat)
   for (let k = 0; k < hours; k++) {
-    const r = rowAt(a, new Date(from.getTime() + k * 3600e3));
+    // Tam saatte ayrıntıdaki saatlik listeyle aynı satır (aynı saat iki yerde farklı puan göstermesin)
+    const t = new Date(from.getTime() + k * 3600e3);
+    const r = (t.getMinutes() === 0 && a.rows.find(x => x.date.getTime() === t.getTime())) || rowAt(a, t);
     if (!r) break;
     const newDay = k > 0 && r.date.getHours() === 0;
     const sv = modeVal(r); // o saatin balık puanı (seçili puan türüne göre)
     cells.push(`<span class="mc${newDay ? ' day' : ''}"><span class="mt">${newDay ? dayShort(r.date) : hh(r.date)}</span>` +
       `<span class="ms" style="background:${scoreColor(sv)}" title="Bu saatin balık puanı">${r.danger ? '⚠' : ''}${fmt(sv, 1)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}${(r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : ''}</span>` +
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
-      `<span class="mr" title="Yağmur ihtimali">💧${fmt(r.rainProb ?? 0)}%</span></span>`);
+      `<span class="mr" title="Yağmur ihtimali (en az çisenti)">💧${r.rainProb == null ? '—' : fmt(r.rainProb) + '%'}</span></span>`);
   }
   return cells.length ? `<span class="mini-wx${hours <= 6 ? ' fixed' : ''}"${hours > 6 ? ' title="Sola kaydırın: 24 saat"' : ''}>${cells.join('')}</span>${hours > 6 ? '<span class="wx-hint">⟵ 24 saat için kaydır · renkli sayı = balık puanı · 💧 = yağmur ihtimali</span>' : ''}` : '';
 }
@@ -827,7 +831,7 @@ function renderModeToggle() {
 // Simge yağmur göstermiyor ama ihtimal yüksekse küçük damla ekle
 const isRainCode = c => c != null && (c >= 51 && c <= 67 || c >= 80);
 const wxIcon = r => weatherIcon(r.code, r.isDay) + ((r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : '');
-const rainText = (r, unit) => `💧%${fmt(r.rainProb ?? 0)}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}${unit}` : ''}`;
+const rainText = (r, unit) => `💧${r.rainProb == null ? '—' : '%' + fmt(r.rainProb)}${r.precip >= 0.1 ? `<br>${fmt(r.precip, 1)}${unit}` : ''}`;
 const scorePill = r => `<span class="score-pill" style="background:${scoreColor(r.score)}">${fmt(r.score, 1)}</span>`;
 
 // —— Sıralama ——
@@ -848,8 +852,9 @@ function targetRow(a) {
   if (rankWhen === 'morning') { const s = sunOn(1); return s && hourAt(rows, s.rise); }
   if (rankWhen === 'tomorrowEvening') { const s = sunOn(1); return s && hourAt(rows, s.set); }
   if (rankWhen === 'best24') {
-    const win = rows.filter(r => r.date >= new Date(now.getTime() - 3600e3) && r.date <= new Date(now.getTime() + 24 * 3600e3));
-    return win.reduce((b, r) => (!b || r.score > b.score ? r : b), null);
+    // İçinde bulunulan saatten başlar (bitmiş saat değil); tehlikeli saat seçilmez
+    const win = rows.filter(r => r.date.getTime() + 3600e3 > now.getTime() && r.date <= new Date(now.getTime() + 24 * 3600e3));
+    return bestSafe(win);
   }
   if (rankWhen === 'custom') {
     const v = $('#rank-custom').value;
@@ -914,13 +919,13 @@ async function renderRankNow(force = false) {
     if (!x.r) continue;
     if (x.trip) {
       const L = x.trip.list;
-      x.show = L.reduce((b, r) => (modeVal(r) > modeVal(b) ? r : b));       // aralıktaki en iyi an
+      x.show = bestSafe(L);       // aralıktaki en iyi an
       x.v = Math.round(L.reduce((t, r) => t + modeVal(r), 0) / L.length * 10) / 10;
     } else { x.show = x.r; x.v = modeVal(x.r); }
   }
   const typeOf = x => x.a?.type ?? (x.place?.water !== 'auto' ? x.place?.water : null);
   const shown = rankWater === 'all' ? results : results.filter(x => typeOf(x) === rankWater);
-  const ok = shown.filter(x => x.r).sort((x, y) => (x.r.danger - y.r.danger) || ((y.v ?? -1) - (x.v ?? -1)));
+  const ok = shown.filter(x => x.r).sort((x, y) => (x.r.danger - y.r.danger) || ((y.v ?? -1) - (x.v ?? -1)) || ((y.r.windScore ?? 0) - (x.r.windScore ?? 0)) || String(x.a.place.name || '').localeCompare(String(y.a.place.name || ''), 'tr'));
   const bad = shown.filter(x => !x.r);
   rankInfo.clear();
   ok.forEach((x, i) => { if (x.a.place.key !== 'me') rankInfo.set(x.a.place.key, { rank: i + 1, score: x.v ?? 0, danger: x.r.danger }); });
@@ -1012,7 +1017,7 @@ function cardData(a) {
     if (!t) return null;
     const L = t.list;
     return { a, trip: t, r: { ...t.best, score: t.avg, danger: t.danger, reasons: t.best.reasons },
-      show: L.reduce((b, r) => (modeVal(r) > modeVal(b) ? r : b)), v: Math.round(L.reduce((s2, r) => s2 + modeVal(r), 0) / L.length * 10) / 10 };
+      show: bestSafe(L), v: Math.round(L.reduce((s2, r) => s2 + modeVal(r), 0) / L.length * 10) / 10 };
   }
   const r = targetRow(a);
   return r ? { a, r, show: r, v: modeVal(r) } : null;
@@ -1217,8 +1222,9 @@ async function openDetail(place, fromTrip = false) {
     const a = await analyze(place, { waitWater: true });
     const now = rowAt(a, new Date()) || hourAt(a.rows, new Date()) || a.rows[0];
     const tw = rankWhen === 'trip' && isTripOpen ? tripWindow() : null;
-    const best = tw ? tripSummary(a, tw.start, tw.end)?.best : null;
-    const sel = best || now;
+    const best = tw ? bestSafe(tripSummary(a, tw.start, tw.end)?.list || []) : null;
+    // Kart hangi saati gösteriyorsa ayrıntı da o saatte açılır (bu akşam, yarın sabah, 24 saatin en iyisi…)
+    const sel = best || (rankWhen !== 'trip' && rankWhen !== 'now' ? targetRow(a) : null) || now;
     detail = { a, day: sel.date.toDateString(), sel, step: detail?.step || 30, trip: tw, tab: 'hourly' };
     renderDetail();
     $('#wx-dialog').scrollTop = 0;
@@ -1248,7 +1254,7 @@ function renderDetail() {
   const fineMin = detail.trip ? (detail.trip.end - detail.trip.start) / 60000 : 6 * 60;
   const fine = slots(a, fineFrom, fineMin, detail.step);
   const fineAvg = fine.length ? fine.reduce((x, r) => x + modeVal(r), 0) / fine.length : null;
-  const fineBest = fine.length ? fine.reduce((b, r) => (modeVal(r) > modeVal(b) ? r : b)) : null;
+  const fineBest = fine.length ? bestSafe(fine) : null;
   const combo = rankMode === 'combo';
   const ringV = modeVal(sel);
   const spotId = place.key && place.key !== 'me' ? place.key : place.id;
@@ -1257,9 +1263,9 @@ function renderDetail() {
   const trend = p3 == null ? '' : sel.pressure - p3 <= -0.6 ? '↘ düşüyor' : sel.pressure - p3 >= 0.6 ? '↗ yükseliyor' : '→ sabit';
   const species = speciesScores(sel, type);
   // Bugün için sadece önümüzdeki saatleri öner
-  const ahead = dayRows.filter(r => r.date.getTime() >= Date.now() - 3600e3);
+  const ahead = dayRows.filter(r => r.date.getTime() + 3600e3 > Date.now());
   const pool = ahead.length ? ahead : dayRows;
-  const advice = adviceText({ dayRows: pool, sel, type, place });
+  const advice = adviceText({ dayRows: pool, sel, type, place, val: modeVal });
   // En iyi puanlar: yüksekten düşüğe; tehlikeli saatler hariç; 3. sıradaki puanla eşit olanlar da (en fazla 6)
   const safePool = pool.filter(r => !r.danger).length ? pool.filter(r => !r.danger) : pool;
   const ranked = [...safePool].sort((x, y) => (modeVal(y) - modeVal(x)) || (x.date - y.date));
@@ -1304,7 +1310,7 @@ function renderDetail() {
     <div class="card fine-card"><h3>⏱️ ${detail.trip ? `Gidiş–dönüş: ${hh(detail.trip.start)} → ${hh(detail.trip.end)}` : 'Şu andan itibaren 6 saat'}</h3>
       <div class="fine-head">
         <span class="seg-mini">${[30, 15].map(m => `<button data-step="${m}" class="${detail.step === m ? 'active' : ''}">${m} dk</button>`).join('')}</span>
-        ${fineAvg != null ? `<span class="muted">ortalama <b>${fmt(fineAvg, 1)}</b> · en iyi an <b>${hh(fineBest.date)}</b> (${fmt(fineBest.score, 1)})</span>` : ''}
+        ${fineAvg != null ? `<span class="muted">ortalama <b>${fmt(fineAvg, 1)}</b> · en iyi an <b>${hh(fineBest.date)}</b> (${fmt(modeVal(fineBest), 1)})</span>` : ''}
       </div>
       <div class="hours wx-strip">${fine.map(r => `<button class="hour wxh ${sel.slot && r.date.getTime() === sel.date.getTime() ? 'now' : ''}" data-slot="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
@@ -1395,7 +1401,7 @@ function renderDetail() {
     </div></div>
 
     <details class="res-note"><summary>ℹ️ Veriler ne kadar yerel?</summary>
-      <p>Koordinat tam bu nokta. Güneş, ay ve alacakaranlık saatleri bu noktaya göre hesaplanıyor. Rüzgar, yağmur ve sıcaklık ise hava modelinin yaklaşık 7 km'lik bölge tahmini; sıcaklık yükseltiye göre düzeltiliyor. Dalga ve deniz suyu sıcaklığı yaklaşık 5–8 km'lik bölge tahmini; dar boğaz ve koylarda daha az hassas. Göl ve dere suyu sıcaklığı ölçülmüyor, son 5 günün havasından tahmin ediliyor (~). Yerel sağanakları ve rüzgarı kesen tepe ya da koyları model göremez.</p></details>`,
+      <p>Koordinat tam bu nokta. Güneş, ay ve alacakaranlık saatleri bu noktaya göre hesaplanıyor. Rüzgar, yağmur ve sıcaklık ise hava modelinin yaklaşık 7 km'lik bölge tahmini; sıcaklık yükseltiye göre düzeltiliyor. Dalga ve deniz suyu sıcaklığı yaklaşık 5–8 km'lik bölge tahmini; dar boğaz ve koylarda daha az hassas. Göl ve dere suyu sıcaklığı ölçülmüyor; son 60 günün havasından ve göl büyüklüğünden tahmin ediliyor (~, ±2 °C şaşabilir). Yerel sağanakları ve rüzgarı kesen tepe ya da koyları model göremez.</p></details>`,
   };
   $('#wx-body').innerHTML = `
     ${cond.offline ? `<p class="warn">Çevrimdışı: ${new Date(cond.fetchedAt).toLocaleString('tr-TR')} tarihli veri.</p>` : ''}
@@ -1449,7 +1455,8 @@ async function onDetailClick(e) {
   if (day) {
     detail.day = day.dataset.day;
     const rows = detail.a.rows.filter(r => r.date.toDateString() === detail.day);
-    detail.sel = rows.reduce((b, r) => (!b || r.score > b.score ? r : b), null) || detail.sel;
+    const left = rows.filter(r => r.date.getTime() + 3600e3 > Date.now());
+    detail.sel = bestSafe(left.length ? left : rows) || detail.sel;
     renderDetail(); return;
   }
   const h = e.target.closest('.hour[data-t]');
