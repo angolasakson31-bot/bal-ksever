@@ -31,6 +31,7 @@ export function rowAt(a, date) {
   v.waveDir = lerpAngle(h0.waveDir, h1.waveDir, f);
   v.currentDir = lerpAngle(h0.currentDir, h1.currentDir, f);
   v.code = f < 0.5 ? h0.code : h1.code;
+  if (Math.max(h0.code ?? 0, h1.code ?? 0) >= 95) v.code = Math.max(h0.code ?? 0, h1.code ?? 0); // şimşek dilimde kaçmasın
   v.precip = h1.precip ?? h0.precip; // mm/saat (bu saatin toplamı)
   const sun = a.cond.suns.find(s => s.rise.toDateString() === v.date.toDateString());
   v.isDay = sun ? +(v.date >= sun.rise && v.date < sun.set) : h0.isDay;
@@ -66,7 +67,8 @@ export function tripSummary(a, start, end) {
   const list = slots(a, start, Math.max(30, (end - start) / 60000), 30);
   if (!list.length) return null;
   const avg = list.reduce((s, r) => s + r.score, 0) / list.length;
-  const best = list.reduce((b, r) => (r.score > b.score ? r : b));
+  const safe = list.filter(r => !r.danger);
+  const best = (safe.length ? safe : list).reduce((b, r) => (r.score > b.score ? r : b));
   const w = list.filter(r => r.windScore != null);
   const avgWind = w.length ? Math.round(w.reduce((x, r) => x + r.windScore, 0) / w.length * 10) / 10 : null;
   const bestWind = w.length ? w.reduce((b, r) => (r.windScore > b.windScore ? r : b)) : best;
