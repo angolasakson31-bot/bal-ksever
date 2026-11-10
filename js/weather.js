@@ -66,7 +66,7 @@ const hasWaves = m => !!m?.hourly?.wave_height?.some(v => v != null);
 
 // Deniz verisi: önce best_match + tüm değişkenler, olmazsa daha basit istekler
 async function fetchMarine(lat, lng) {
-  const b = `${MARINE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&forecast_days=7&past_days=2` +
+  const b = `${MARINE}?latitude=${lat.toFixed(2)}&longitude=${lng.toFixed(2)}&timezone=auto&forecast_days=7&past_days=2` +
     '&hourly=wave_height,wave_direction,sea_surface_temperature';
   const full = `${b},wave_period,swell_wave_height,ocean_current_velocity,ocean_current_direction`;
   for (const u of [`${full}&models=best_match`, full, b]) {
@@ -79,7 +79,7 @@ async function fetchMarine(lat, lng) {
 const asList = (j, n) => (Array.isArray(j) ? j : n === 1 ? [j] : []);
 async function fetchMarineMany(pts) {
   if (!pts.length) return [];
-  const la = pts.map(p => p[0].toFixed(4)).join(','), ln = pts.map(p => p[1].toFixed(4)).join(',');
+  const la = pts.map(p => p[0].toFixed(2)).join(','), ln = pts.map(p => p[1].toFixed(2)).join(',');
   const b = `${MARINE}?latitude=${la}&longitude=${ln}&timezone=auto&forecast_days=7&past_days=2&hourly=wave_height,wave_direction,sea_surface_temperature`;
   const full = `${b},wave_period,swell_wave_height,ocean_current_velocity,ocean_current_direction`;
   for (const u of [`${full}&models=best_match`, full, b]) {
@@ -118,10 +118,10 @@ export async function getConditions(lat, lng, { force = false, wantSea = false }
   const hit = memCache.get(k);
   if (!force && hit && Date.now() - hit.fetchedAt < TTL) return hit;
 
-  const base = `latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&forecast_days=7`;
+  const base = `latitude=${lat.toFixed(2)}&longitude=${lng.toFixed(2)}&timezone=auto&forecast_days=7`;
   const fUrl = `${FORECAST}?${base}&past_days=5&wind_speed_unit=kmh&models=best_match&hourly=${HOURLY}&daily=sunrise,sunset`;
   // 15 dakikalık veri (önümüzdeki 48 saat). Desteklenmezse saatlik veriden ara değer hesaplanır.
-  const qUrl = `${FORECAST}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&timezone=auto&wind_speed_unit=kmh&models=best_match&minutely_15=${M15}&forecast_minutely_15=192&past_minutely_15=4`;
+  const qUrl = `${FORECAST}?latitude=${lat.toFixed(2)}&longitude=${lng.toFixed(2)}&timezone=auto&wind_speed_unit=kmh&models=best_match&minutely_15=${M15}&forecast_minutely_15=192&past_minutely_15=4`;
 
   try {
     // Ek deniz değişkenleri bir noktada desteklenmezse temel değişkenlerle tekrar dene
@@ -157,7 +157,7 @@ export async function prefetchConditions(points, { force = false } = {}) {
   });
   for (let s = 0; s < need.length; s += 25) {
     const part = need.slice(s, s + 25);
-    const la = part.map(p => p.lat.toFixed(4)).join(','), ln = part.map(p => p.lng.toFixed(4)).join(',');
+    const la = part.map(p => p.lat.toFixed(2)).join(','), ln = part.map(p => p.lng.toFixed(2)).join(',');
     const base = `latitude=${la}&longitude=${ln}&timezone=auto&forecast_days=7`;
     const fUrl = `${FORECAST}?${base}&past_days=5&wind_speed_unit=kmh&models=best_match&hourly=${HOURLY}&daily=sunrise,sunset`;
     const qUrl = `${FORECAST}?latitude=${la}&longitude=${ln}&timezone=auto&wind_speed_unit=kmh&models=best_match&minutely_15=${M15}&forecast_minutely_15=192&past_minutely_15=4`;
@@ -219,7 +219,7 @@ export async function getAirDaily(lat, lng, { force = false } = {}) {
   const c = airGet(k);
   if (!force && c && Date.now() - c.at < AIR_TTL) return c;
   try {
-    const v = airParse(await getJson(airUrl(lat.toFixed(4), lng.toFixed(4)), 2));
+    const v = airParse(await getJson(airUrl(lat.toFixed(2), lng.toFixed(2)), 2));
     if (v) { airPut(k, v); return v; }
   } catch { /* ağ yok */ }
   return c; // eski kayıt da olur (yoksa null: eski yöntem kullanılır)
@@ -229,7 +229,7 @@ export async function prefetchAirDaily(points, { force = false } = {}) {
   for (let s = 0; s < need.length; s += 25) {
     const part = need.slice(s, s + 25);
     try {
-      const l = asList(await getJson(airUrl(part.map(p => p.lat.toFixed(4)).join(','), part.map(p => p.lng.toFixed(4)).join(',')), 2), part.length);
+      const l = asList(await getJson(airUrl(part.map(p => p.lat.toFixed(2)).join(','), part.map(p => p.lng.toFixed(2)).join(',')), 2), part.length);
       if (l.length !== part.length) continue;
       part.forEach((p, i) => { const v = airParse(l[i]); if (v) airPut(key(p.lat, p.lng), v); });
     } catch { /* tek tek denenir */ }

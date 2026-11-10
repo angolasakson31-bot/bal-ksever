@@ -6,6 +6,7 @@ import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
 import { renderKnots, renderRigs } from './guide.js';
 import * as grp from './group.js';
+import { cleanCatch, cleanSpot, cleanDoc } from './clean.js';
 
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -40,7 +41,7 @@ function photoSrc(c, p) {
 const photoUrl = c => { const p = catchPhotos(c)[0]; return p ? photoSrc(c, p) : null; };
 // Küçük resim: dokununca büyük açılır (birden çok fotoğrafta köşede sayı); yüklenemezse balık simgesine döner
 const thumbImg = (url, c) => { const n = catchPhotos(c).length;
-  return `<span class="thumb-wrap"><img class="catch-thumb" src="${url}" data-view="${c.id}" alt="${esc(c.species)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;catch-thumb&quot;>🐟</div>'">${n > 1 ? `<b class="pcount">${n}</b>` : ''}</span>`; };
+  return `<span class="thumb-wrap"><img class="catch-thumb" src="${esc(url)}" data-view="${esc(c.id)}" data-fallback="fish" alt="${esc(c.species)}" loading="lazy">${n > 1 ? `<b class="pcount">${n}</b>` : ''}</span>`; };
 
 // ——— Tam ekran fotoğraf görüntüleyici (sağa/sola kaydır) ———
 const viewer = { items: [], i: 0 };
@@ -69,7 +70,7 @@ function photoGrid(list, { max = 0, more = '' } = {}) {
   const all = spotPhotos(list);
   if (!all.length) return '';
   const shown = max ? all.slice(0, max) : all;
-  return `<div class="pgrid">${shown.map((x, i) => `<button type="button" class="pcell" data-gallery="${i}"><img src="${x.src}" alt="${esc(x.c.species)}" loading="lazy" onerror="this.parentElement.remove()"><span>${esc(x.c.species)}${x.c.length ? ` ${x.c.length} cm` : ''}</span></button>`).join('')}
+  return `<div class="pgrid">${shown.map((x, i) => `<button type="button" class="pcell" data-gallery="${i}"><img src="${esc(x.src)}" data-fallback="remove" alt="${esc(x.c.species)}" loading="lazy"><span>${esc(x.c.species)}${x.c.length ? ` ${x.c.length} cm` : ''}</span></button>`).join('')}
     ${max && all.length > max ? `<button type="button" class="pcell more" data-dtab="catches">+${all.length - max}<span>${more || 'tümü'}</span></button>` : ''}</div>`;
 }
 
@@ -148,7 +149,10 @@ const ls = k => { try { return localStorage.getItem(k); } catch { return null; }
 const spotById = id => state.spots.find(s => s.id === id);
 
 async function loadData() {
-  [state.catches, state.spots] = await Promise.all([db.getAll('catches'), db.getAll('spots')]);
+  const [cs, ss] = await Promise.all([db.getAll('catches'), db.getAll('spots')]);
+  // Her kayıt beklenen tiplere çevrilir (bozuk/kötü niyetli kayıt uygulamayı çökertemez, sayfaya kod sokamaz)
+  state.catches = cs.map(cleanCatch).filter(Boolean);
+  state.spots = ss.map(cleanSpot).filter(Boolean);
   state.catches.sort((a, b) => new Date(b.date) - new Date(a.date));
   state.spots.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 }
@@ -306,7 +310,7 @@ function editSrc(p) {
 }
 function renderEditPhotos() {
   const ph = editing.photos;
-  $('#catch-photos').innerHTML = ph.map((p, i) => `<div class="ptile"><img src="${editSrc(p)}" alt="" data-epv="${i}"><button type="button" class="prm" data-rm="${i}" aria-label="Fotoğrafı kaldır">✕</button>${i === 0 ? '<span class="pfirst">kapak</span>' : ''}</div>`).join('') +
+  $('#catch-photos').innerHTML = ph.map((p, i) => `<div class="ptile"><img src="${esc(editSrc(p))}" alt="" data-epv="${i}"><button type="button" class="prm" data-rm="${i}" aria-label="Fotoğrafı kaldır">✕</button>${i === 0 ? '<span class="pfirst">kapak</span>' : ''}</div>`).join('') +
     (ph.length < MAX_PHOTOS ? `<label class="ptile padd"><input type="file" id="catch-photo" accept="image/*" multiple hidden><span>📷<br>${ph.length ? 'Ekle' : 'Fotoğraf ekle'}</span></label>` : '');
   $('#catch-photo-count').textContent = ph.length ? `${ph.length}/${MAX_PHOTOS} fotoğraf · ilk fotoğraf kapak` : `En fazla ${MAX_PHOTOS} fotoğraf`;
 }
@@ -492,7 +496,7 @@ function renderMapMarkers() {
     if (!sp && state.spots.some(x => Number.isFinite(x.lat) && distM(c, x) < 150)) continue; // meranın üstüne binmesin
     const m = L.marker([c.lat, c.lng], { icon: L.divIcon({ className: 'fish-marker', html: findSpecies(c.species)?.emoji || '🐟', iconSize: [22, 22] }) });
     const url = photoUrl(c);
-    m.bindPopup(`${url ? `<img class="pop-photo" src="${url}" data-view="${c.id}" alt="${esc(c.species)}" loading="lazy">` : ''}
+    m.bindPopup(`${url ? `<img class="pop-photo" src="${esc(url)}" data-view="${esc(c.id)}" alt="${esc(c.species)}" loading="lazy">` : ''}
       <b>${esc(c.species)}</b>${c.length ? ` · ${c.length} cm` : ''}<br><small>${esc(fmtDate(c.date))} ${fmtTime(c.date)}</small>
       <div class="popup-actions"><button data-act="edit-catch" data-id="${c.id}">Aç</button></div>`);
     catchLayer.addLayer(m);
@@ -1787,7 +1791,7 @@ async function onGroupAction(act, code) {
     const unsent = await grp.unsentCount(code).catch(() => 0);
     if (unsent && !confirm(`⚠️ Bu grupta henüz sunucuya gönderilmemiş ${unsent} kayıt var. Çıkarsan bunlar KAYBOLUR.\n\nÖnce internete bağlanıp grubu açman önerilir. Yine de çıkılsın mı?`)) return;
     if (!confirm('Bu gruptan çıkılsın mı? Sunucuya gönderilmiş kayıtlar grupta kalır, sadece bu telefondan kaldırılır. Link ile tekrar girebilirsin.')) return;
-    if (code === grp.group.code) { await grp.leaveGroup(code); location.href = location.pathname; return; }
+    if (code === grp.group.code) { await grp.leaveGroup(code); grp.exitGroupTab(); location.href = location.pathname; return; }
     await grp.leaveGroup(code); renderMore();
   }
   if (act === 'name') {
@@ -1839,8 +1843,9 @@ async function importPayload(data) {
   // Telefondaki daha yeni kayıt, yedekteki eski haliyle ezilmesin
   const newer = async (store, rec) => { const cur = await db.get(store, rec.id).catch(() => null); return cur && ms(cur.updatedAt) > ms(rec.updatedAt); };
   for (const s2 of data.spots || []) {
-    if (!s2 || !okId(s2.id) || await newer('spots', s2)) continue;
-    await db.put('spots', s2);
+    const c2 = cleanSpot(s2);
+    if (!c2 || await newer('spots', c2)) continue;
+    await db.put('spots', c2);
   }
   for (const c of data.catches || []) {
     if (!c || !okId(c.id) || await newer('catches', c)) continue;
@@ -1849,7 +1854,8 @@ async function importPayload(data) {
       .filter(p => p.url || p.blob) : undefined;
     const photo = photos?.[0]?.blob || await toBlob(c.photo);
     dropPhotoUrl(c.id);
-    await db.put('catches', { ...c, photo, ...(photos ? { photos } : {}) });
+    const c3 = cleanCatch({ ...c, photo, ...(photos ? { photos } : {}) });
+    if (c3) await db.put('catches', c3);
   }
   for (const [k, v] of Object.entries(data.settings || {})) {
     try {
@@ -2212,7 +2218,14 @@ function bindEvents() {
     if (e.target.id === 'import-file' && e.target.files[0]) importBackup(e.target.files[0]);
   });
   $('#more-content').addEventListener('submit', e => { if (e.target.id === 'group-create') { e.preventDefault(); onGroupAction('create'); } });
-  $('#group-exit').addEventListener('click', () => { location.href = location.pathname; });
+  $('#group-exit').addEventListener('click', () => { grp.exitGroupTab(); location.href = location.pathname; });
+  // Yüklenemeyen fotoğraf (satır içi kod yerine tek dinleyici)
+  document.addEventListener('error', e => {
+    const im = e.target;
+    if (im?.tagName !== 'IMG' || !im.dataset.fallback) return;
+    if (im.dataset.fallback === 'remove') im.parentElement?.remove();
+    else { const d = document.createElement('div'); d.className = 'catch-thumb'; d.textContent = '🐟'; im.replaceWith(d); }
+  }, true);
   $('#group-share').addEventListener('click', () => shareGroup(grp.group.code, grp.group.name));
   $('#more-content').addEventListener('click', e => {
     const mt = e.target.closest('[data-more]');
