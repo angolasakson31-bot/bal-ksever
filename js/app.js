@@ -1345,7 +1345,7 @@ function renderDetail() {
     </div>
 
     <div class="card"><h3>🌤️ Saat saat hava</h3>
-      <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === selH && !sel.slot ? 'now' : ''}" data-t="${r.date.getTime()}">
+      <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === selH && !sel.slot ? 'now' : ''}${r === selH ? ' cur' : ''}" data-t="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
         <div class="ico">${wxIcon(r)}</div><div class="wword">${weatherWord(r.code)}</div>
         <div class="t">${fmt(r.temp)}°</div>
@@ -1466,7 +1466,7 @@ function renderDetail() {
                : `<button id="wx-save-spot">📍 Mera olarak kaydet</button>`}
     </div>
     <p class="muted">Skor ve tür tahminleri, hava verisi ve balıkçılık bilgisine dayalı tahminlerdir; kesinlik içermez.</p>`;
-  const cur = $('#wx-hours .hour.now');
+  const cur = $('#wx-hours .hour.cur'); // seçili an 15 dakikalık dilim olsa da şerit o saate kayar
   if (cur) cur.parentElement.scrollLeft = cur.offsetLeft - cur.parentElement.offsetLeft - 8;
 }
 
@@ -1799,16 +1799,23 @@ async function shareGroup(code, name) {
   else prompt('Linki kopyalayın:', url);
 }
 
+let creatingGroup = false;
 async function onGroupAction(act, code) {
   if (act === 'create') {
+    if (creatingGroup) return; // ikinci basış ikinci grubu açmasın
     const name = $('#group-new-name').value.trim() || 'Balık grubu';
-    const by = await askName(`"${name}" grubunda adın ne?`, grp.lastName(), { required: true, note: 'Grupta eklediğin meralarda ve avlarda bu ad görünür.' });
+    const by = await askName(`"${name}" grubunda adın ne?`, grp.lastName(), { note: 'Grupta eklediğin meralarda ve avlarda bu ad görünür.' });
+    if (!by) return; // vazgeçildi
+    creatingGroup = true;
+    const btn = $('#group-create button'); const old = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = 'Oluşturuluyor…'; }
     try {
-      toast('Grup oluşturuluyor… (sunucu uyuyorsa 30 sn sürebilir)', 4000);
+      toast('Grup oluşturuluyor… Sunucu uyuyorsa 1 dakikaya kadar sürebilir, bekleyin.', 8000);
       const r = await grp.createGroup(name, by);
       renderMore();
       await shareGroup(r.code, r.name); // oluşturunca link kopyalanır
-    } catch (e) { toast('Grup oluşturulamadı: ' + e.message, 5000); }
+    } catch (e) { toast('Grup oluşturulamadı: ' + e.message, 6000); if (btn) { btn.disabled = false; btn.textContent = old; } }
+    finally { creatingGroup = false; }
   }
   if (act === 'retry') { await grp.retryFailed(); renderGroupBar(); renderMore(); }
   if (act === 'open') location.href = grp.groupLink(code);
@@ -1935,20 +1942,20 @@ function detectBrowser() {
   const ua = navigator.userAgent;
   const android = /android/i.test(ua);
   if (isIOS()) {
-    if (/CriOS/i.test(ua)) return { name: 'iPhone · Chrome', menu: 'share-t', steps: ['Adres çubuğunun sağındaki <b>Paylaş ⬆️</b> düğmesine dokunun.', 'Listeyi kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>ye dokunun.', 'Bu seçenek yoksa (iOS 16.4 öncesi) sayfayı <b>Safari</b> ile açın.'] };
-    if (/FxiOS/i.test(ua)) return { name: 'iPhone · Firefox', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>ye dokunun.', '<b>Paylaş</b>ı seçin.', '<b>“Ana Ekrana Ekle”</b>ye dokunun, sonra <b>Ekle</b>.', 'Seçenek yoksa sayfayı <b>Safari</b> ile açın.'] };
-    if (/EdgiOS/i.test(ua)) return { name: 'iPhone · Edge', menu: 'bc', steps: ['Alttaki <b>⋯ menü</b>ye dokunun.', '<b>Paylaş</b>ı seçin.', '<b>“Ana Ekrana Ekle”</b>ye dokunun, sonra <b>Ekle</b>.', 'Seçenek yoksa sayfayı <b>Safari</b> ile açın.'] };
-    return { name: 'iPhone · Safari', menu: 'share-b', steps: ['Alttaki <b>Paylaş</b> düğmesine dokunun (⬆️ kare içinde ok).', 'Listeyi aşağı kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>ye dokunun.'] };
+    if (/CriOS/i.test(ua)) return { name: 'iPhone · Chrome', menu: 'share-t', steps: ['Adres çubuğunun sağındaki <b>Paylaş ⬆️</b> düğmesine dokunun.', 'Listeyi kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>’ye dokunun.', 'Bu seçenek yoksa (iOS 16.4 öncesi) sayfayı <b>Safari</b> ile açın.'] };
+    if (/FxiOS/i.test(ua)) return { name: 'iPhone · Firefox', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>’ye dokunun.', '<b>Paylaş</b>ı seçin.', '<b>“Ana Ekrana Ekle”</b>’ye dokunun, sonra <b>Ekle</b>.', 'Seçenek yoksa sayfayı <b>Safari</b> ile açın.'] };
+    if (/EdgiOS/i.test(ua)) return { name: 'iPhone · Edge', menu: 'bc', steps: ['Alttaki <b>⋯ menü</b>’ye dokunun.', '<b>Paylaş</b>ı seçin.', '<b>“Ana Ekrana Ekle”</b>’ye dokunun, sonra <b>Ekle</b>.', 'Seçenek yoksa sayfayı <b>Safari</b> ile açın.'] };
+    return { name: 'iPhone · Safari', menu: 'share-b', steps: ['Alttaki <b>Paylaş</b> düğmesine dokunun (⬆️ kare içinde ok).', 'Listeyi aşağı kaydırıp <b>“Ana Ekrana Ekle”</b>yi seçin.', 'Sağ üstte <b>Ekle</b>’ye dokunun.'] };
   }
   const base = { android };
-  if (/SamsungBrowser/i.test(ua)) return { ...base, name: 'Samsung Internet', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>ye dokunun.', '<b>“Sayfayı ekle”</b> → <b>“Ana ekran”</b>ı seçin.', '<b>Ekle</b>ye dokunun.'] };
-  if (/EdgA/i.test(ua)) return { ...base, name: 'Edge', menu: 'bc', steps: ['Alttaki <b>⋯ menü</b>ye dokunun.', '<b>“Telefona ekle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle / Yükle</b>ye dokunun.'] };
-  if (/OPR|Opera/i.test(ua)) return { ...base, name: 'Opera', menu: 'tr', steps: ['Sağ üstteki <b>⋮ menü</b>ye dokunun.', '<b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
-  if (/YaBrowser/i.test(ua)) return { ...base, name: 'Yandex', menu: 'tr', steps: ['<b>⋮ menü</b>ye dokunun.', '<b>“Ana ekrana kısayol ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
-  if (/MiuiBrowser|XiaoMi/i.test(ua)) return { ...base, name: 'Xiaomi (Mi) Tarayıcı', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>ye dokunun.', '<b>“Kısayol ekle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', 'Telefon izin isterse <b>izin verin</b>.'] };
-  if (/HuaweiBrowser|HuaweiBrowser/i.test(ua)) return { ...base, name: 'Huawei Tarayıcı', menu: 'tr', steps: ['<b>⋮ menü</b>ye dokunun.', '<b>“Kısayol ekle”</b> / <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
-  if (/Firefox/i.test(ua)) return { ...base, name: 'Firefox', menu: 'tr', steps: ['Adres çubuğunun yanındaki <b>⋮ menü</b>ye dokunun.', '<b>“Yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>ye dokunun.'] };
-  if (/Chrome/i.test(ua) && /Google Inc/.test(navigator.vendor) && !/wv\)/.test(ua)) return { ...base, name: 'Chrome', chrome: true, menu: 'tr', steps: ['Sağ üstteki <b>⋮ menü</b>ye dokunun.', '<b>“Uygulamayı yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Yükle / Ekle</b>ye dokunun.'] };
+  if (/SamsungBrowser/i.test(ua)) return { ...base, name: 'Samsung Internet', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>’ye dokunun.', '<b>“Sayfayı ekle”</b> → <b>“Ana ekran”</b>ı seçin.', '<b>Ekle</b>’ye dokunun.'] };
+  if (/EdgA/i.test(ua)) return { ...base, name: 'Edge', menu: 'bc', steps: ['Alttaki <b>⋯ menü</b>’ye dokunun.', '<b>“Telefona ekle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle / Yükle</b>ye dokunun.'] };
+  if (/OPR|Opera/i.test(ua)) return { ...base, name: 'Opera', menu: 'tr', steps: ['Sağ üstteki <b>⋮ menü</b>’ye dokunun.', '<b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>’ye dokunun.'] };
+  if (/YaBrowser/i.test(ua)) return { ...base, name: 'Yandex', menu: 'tr', steps: ['<b>⋮ menü</b>’ye dokunun.', '<b>“Ana ekrana kısayol ekle”</b>yi seçin.', '<b>Ekle</b>’ye dokunun.'] };
+  if (/MiuiBrowser|XiaoMi/i.test(ua)) return { ...base, name: 'Xiaomi (Mi) Tarayıcı', menu: 'br', steps: ['Sağ alttaki <b>☰ menü</b>’ye dokunun.', '<b>“Kısayol ekle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', 'Telefon izin isterse <b>izin verin</b>.'] };
+  if (/HuaweiBrowser|HuaweiBrowser/i.test(ua)) return { ...base, name: 'Huawei Tarayıcı', menu: 'tr', steps: ['<b>⋮ menü</b>’ye dokunun.', '<b>“Kısayol ekle”</b> / <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>’ye dokunun.'] };
+  if (/Firefox/i.test(ua)) return { ...base, name: 'Firefox', menu: 'tr', steps: ['Adres çubuğunun yanındaki <b>⋮ menü</b>’ye dokunun.', '<b>“Yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Ekle</b>’ye dokunun.'] };
+  if (/Chrome/i.test(ua) && /Google Inc/.test(navigator.vendor) && !/wv\)/.test(ua)) return { ...base, name: 'Chrome', chrome: true, menu: 'tr', steps: ['Sağ üstteki <b>⋮ menü</b>’ye dokunun.', '<b>“Uygulamayı yükle”</b> ya da <b>“Ana ekrana ekle”</b>yi seçin.', '<b>Yükle / Ekle</b>ye dokunun.'] };
   return { ...base, name: android ? 'Bu tarayıcı' : 'Bilgisayar', menu: 'tr', steps: android
     ? ['Tarayıcı menüsünü (genelde <b>⋮</b> ya da <b>☰</b>) açın.', '<b>“Ana ekrana ekle”</b>, <b>“Kısayol ekle”</b> ya da <b>“Uygulamayı yükle”</b>yi arayın.', 'Bu seçenek yoksa aşağıdaki <b>“Chrome’da aç”</b> düğmesine dokunun; Chrome’da tek dokunuşla eklenir.']
     : ['Adres çubuğunun sağındaki <b>yükle</b> simgesine (⊕ ya da 🖥️) tıklayın.', 'Yoksa tarayıcı menüsünden <b>“Uygulamayı yükle”</b>yi seçin.'] };
@@ -2019,7 +2026,7 @@ function setupInstallHint() {
     hint.hidden = true;
     try { localStorage.setItem('hideInstall', '1'); } catch { /* yok */ }
     updateInstallUI(); updateTopH();
-    toast('Gizlendi. İstersen Rehber → ⚙️ Ayarlar\'dan yine ana ekrana ekleyebilirsin.', 4000);
+    toast('Gizlendi. İstersen alttaki ⚙️ Ayarlar & Rehber\'den yine ana ekrana ekleyebilirsin.', 4000);
   };
 }
 
@@ -2027,6 +2034,7 @@ function setupInstallHint() {
 function bindEvents() {
   document.querySelectorAll('.bottom-nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#fab').addEventListener('click', () => openCatchDialog());
+  $('#map-catch').addEventListener('click', () => openCatchDialog());
   document.addEventListener('click', e => {
     const v = e.target.closest('img[data-view]');
     if (!v) return;
@@ -2077,6 +2085,11 @@ function bindEvents() {
     $('#catch-location-text').textContent = 'Konum alınıyor…';
     try { Object.assign(editing, await getPosition()); } catch (err) { toast(err.message); }
     updateLocationText();
+    // Mera seçilmediyse 1,5 km içindeki en yakın mera önerilir
+    if (editing.lat != null && !$('#catch-spot').value) {
+      const near = state.spots.map(sp => ({ sp, d: distM(editing, sp) })).sort((a, b) => a.d - b.d)[0];
+      if (near && near.d <= 1500) { $('#catch-spot').value = near.sp.id; toast(`Mera: ${near.sp.name} (${Math.round(near.d)} m) seçildi`); }
+    }
   });
 
   // Mera formu

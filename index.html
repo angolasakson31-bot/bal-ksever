@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Rastgele</title>
-  <meta name="description" content="Kıyı balıkçıları için av günlüğü, mera haritası ve hava/deniz durumu.">
+  <meta name="description" content="Kıyı, göl ve dere balıkçıları için av günlüğü, mera haritası ve balık tahmini.">
   <meta name="theme-color" content="#0b3b5a">
   <meta name="referrer" content="strict-origin">
   <!-- Yalnız bilinen adreslerden kod ve veri: sayfaya sızan bir kod dışarı veri gönderemesin -->
@@ -67,7 +67,8 @@
 
       <div class="map-fabs">
         <button id="map-here" class="round-btn here-btn" title="Bulunduğum yer: konumu bul ve kartını göster" aria-label="Bulunduğum yerin kartı">📍</button>
-        <button id="map-fit" class="round-btn" title="Tüm meraları göster" aria-label="Tüm meraları göster">🔍</button>
+        <button id="map-fit" class="round-btn" title="Tüm meraları göster" aria-label="Tüm meraları göster">🗺️</button>
+        <button id="map-catch" class="round-btn catch-btn" title="Yeni av ekle" aria-label="Yeni av ekle">🐟＋</button>
       </div>
 
       <!-- Yana kayan mera kartları -->
@@ -140,7 +141,7 @@
       </div>
 
       <label class="check"><input id="catch-released" type="checkbox"> Geri saldım</label>
-      <label>Not<textarea id="catch-notes" rows="2" placeholder="Rüzgar, su rengi, akıntı…"></textarea></label>
+      <label>Not<textarea id="catch-notes" rows="2" maxlength="2000" placeholder="Rüzgar, su rengi, akıntı…"></textarea></label>
 
       <div class="dialog-actions">
         <button type="button" id="catch-delete" class="btn danger" hidden>Sil</button>
@@ -187,7 +188,7 @@
           <option value="none">Her yanı su / kullanma</option>
         </select>
       </label>
-      <label>Not<textarea id="spot-notes" rows="3" placeholder="Hangi rüzgarda iyi, park yeri, dip yapısı…"></textarea></label>
+      <label>Not<textarea id="spot-notes" rows="3" maxlength="2000" placeholder="Hangi rüzgarda iyi, park yeri, dip yapısı…"></textarea></label>
       <p class="muted" id="spot-coords"></p>
       <div class="dialog-actions">
         <button type="button" id="spot-delete" class="btn danger" hidden>Sil</button>
@@ -269,7 +270,7 @@
       <button data-when="custom">📅 Gün/saat seç</button>
     </div>
     <div id="trip-row" class="card trip-row" hidden>
-      <div class="stepper"><span>Kaç saat sonra çıkacaksınız?</span>
+      <div class="stepper"><span>Kaç saat sonra çıkacaksın?</span>
         <button type="button" data-step="go:-0.5">−</button><b id="trip-go">1</b><button type="button" data-step="go:0.5">＋</button></div>
       <div class="stepper"><span>Kaç saat kalacaksınız?</span>
         <button type="button" data-step="stay:-0.5">−</button><b id="trip-stay">4</b><button type="button" data-step="stay:0.5">＋</button></div>

@@ -919,3 +919,5 @@ div.catch-thumb { cursor: inherit; }
 .best-list li.top b { font-size: 1.05em; }
 #spot-lake-row[hidden] { display: none; }
 .trash-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border)} .warn-box{background:#fff4e0;color:#6a4b00;border-radius:10px;padding:8px;margin:8px 0}
+
+.round-btn.catch-btn { font-size: .78rem; background: var(--primary); color: var(--primary-ink); }
