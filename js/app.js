@@ -1324,7 +1324,7 @@ function renderDetail() {
         <div>💧 %${fmt(sel.rainProb)} · ${fmt(sel.precip, 1)} mm</div></div>
     </div>
 
-    <div class="card fine-card"><h3>⏱️ ${detail.trip ? `Gidiş–dönüş: ${hh(detail.trip.start)} → ${hh(detail.trip.end)}` : 'Şu andan itibaren 6 saat'}</h3>
+    ${!detail.trip ? '' : `<div class="card fine-card"><h3>⏱️ Gidiş–dönüş: ${hh(detail.trip.start)} → ${hh(detail.trip.end)}</h3>
       <div class="fine-head">
         <span class="seg-mini">${[30, 15].map(m => `<button data-step="${m}" class="${detail.step === m ? 'active' : ''}">${m} dk</button>`).join('')}</span>
         ${fineAvg != null ? `<span class="muted">ortalama <b>${fmt(fineAvg, 1)}</b> · en iyi an <b>${hh(fineBest.date)}</b> (${fmt(modeVal(fineBest), 1)})</span>` : ''}
@@ -1342,10 +1342,10 @@ function renderDetail() {
         ${r.danger ? '<div>⚠️</div>' : ''}
       </button>`).join('')}</div>
       <p class="chart-note">Saatlik tahminin arası hesaplanarak gösteriliyor. Bir ana dokunarak seçin.</p>
-    </div>
+    </div>`}
 
-    <div class="card"><h3>🌤️ Saat saat hava</h3>
-      <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === selH && !sel.slot ? 'now' : ''}${r === selH ? ' cur' : ''}" data-t="${r.date.getTime()}">
+    <div class="card"><h3>🌤️ Saat saat hava · ${detail.day === new Date().toDateString() ? 'Bugün' : new Date(detail.day).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} (24 saat)</h3>
+      <div class="hours wx-strip" id="wx-hours">${dayRows.map(r => `<button class="hour wxh ${r === selH ? 'now cur' : ''}" data-t="${r.date.getTime()}">
         <div class="h">${hh(r.date)}</div>
         <div class="ico">${wxIcon(r)}</div><div class="wword">${weatherWord(r.code)}</div>
         <div class="t">${fmt(r.temp)}°</div>
