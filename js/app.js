@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { SPECIES, BAITS, METHODS, CHECKLIST, findSpecies } from './data.js';
-import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater, prefetchConditions, condKey, netStatus, getAirDaily, prefetchAirDaily } from './weather.js';
+import { getConditions, windName, arrow, weatherText, weatherIcon, weatherWord, TTL, detectShore, detectWater, cachedWater, forgetWater, rememberWater, prefetchConditions, condKey, netStatus, getAirDaily, prefetchAirDaily } from './weather.js';
 import { scoreHours, windRelation, hourAt, moonPhase, solunar, scoreClass, scoreColor, scoreLabel, scoreShort, WATER_TYPES, LAKE_SIZES, lakeSizeFor, waterModel } from './fishscore.js';
 import { speciesScores, adviceText, moonTimes } from './species-model.js';
 import { rowAt, slots, tripSummary, roundQ } from './timeline.js';
@@ -439,22 +439,34 @@ function baseLayers() {
 }
 
 // Dokunulan noktanın adı (göl, köy, iskele…) — OpenStreetMap Nominatim
+// Yer adı (Nominatim). Kurallarına uygun: istekler sırayla ve en az 1 sn arayla; sonuç ~100 m'lik kare için saklanır.
+const placeCache = new Map();
+let nomChain = Promise.resolve();
+const nomNext = fn => { const p = nomChain.then(fn, fn); nomChain = p.then(() => new Promise(r => setTimeout(r, 1050)), () => new Promise(r => setTimeout(r, 1050))); return p; };
 async function placeName(lat, lng) {
-  const url = layer => `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&accept-language=tr${layer ? `&layer=${layer}` : ''}`;
+  const ck = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (placeCache.has(ck)) return placeCache.get(ck);
+  try { const c = JSON.parse(localStorage.getItem('pn1:' + ck)); if (c && Date.now() - c.at < 90 * 864e5) { placeCache.set(ck, c.v); return c.v; } } catch { /* yok */ }
+  const url = layer => `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat.toFixed(4)}&lon=${lng.toFixed(4)}&zoom=14&accept-language=tr${layer ? `&layer=${layer}` : ''}`;
   const pick = j => {
     if (!j || j.error) return null;
     const ad = j.address || {};
     const main = j.name || ad.water || ad.natural || ad.bay || ad.village || ad.suburb || ad.town || ad.city_district || ad.city;
     const area = [ad.town || ad.city_district || ad.county, ad.province || ad.state].filter(x => x && x !== main).join(', ');
-    return main ? { name: main, area } : null;
+    return main ? { name: String(main).slice(0, 80), area: String(area).slice(0, 80) } : null;
   };
-  const get = async u => {
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 3000);
-    try { return pick(await (await fetch(u, { signal: ctl.signal })).json()); } catch { return null; } finally { clearTimeout(t); }
-  };
-  // Su adı (göl, koy…) ile genel adres aynı anda; önce su adı
-  const [nat, gen] = await Promise.all([get(url('natural')), get(url(''))]);
-  return nat || gen;
+  let failed = false;
+  const get = u => nomNext(async () => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 3500);
+    try { return pick(await (await fetch(u, { signal: ctl.signal })).json()); } catch { failed = true; return null; } finally { clearTimeout(t); }
+  });
+  // Önce su adı (göl, koy…); yoksa genel adres
+  const v = (await get(url('natural'))) || (await get(url('')));
+  if (v || !failed) {
+    placeCache.set(ck, v);
+    try { localStorage.setItem('pn1:' + ck, JSON.stringify({ v, at: Date.now() })); } catch { /* dolu */ }
+  }
+  return v;
 }
 
 function fitAll() {
@@ -694,6 +706,7 @@ async function showAutoWater(lat, lng) {
   opt.textContent = g && !g.noWater
     ? `Otomatik: ${WATER_TYPES[g.type].icon} ${WATER_TYPES[g.type].label}${g.name ? ` · ${g.name}` : ''}`
     : 'Otomatik algıla (su bulunamadı, elle seçin)';
+  if (g?.unsure) opt.textContent += ' (emin değil: yakında ' + (g.unsure === 'sea' ? 'deniz' : 'göl') + ' de var)';
   const lk = lakeSizeFor({ name: $('#spot-name').value }, g);
   $('#spot-lake option[value="auto"]').textContent = `Otomatik: ${LAKE_SIZES[lk.size].label}${lk.source === 'default' ? ' (bilinmiyor)' : ''}`;
   if ($('#spot-water').value === 'auto') $('#spot-lake-row').hidden = g?.type ? g.type !== 'lake' : false;
@@ -763,7 +776,7 @@ async function analyze(place, opts = {}) {
     // Hava geldi; su tipi için en fazla 2.5 sn daha bekle (waitWater), gelmezse sonra haber ver
     const g = opts.waitWater ? await Promise.race([waterP, new Promise(r => setTimeout(() => r(undefined), 1200))]) : undefined;
     if (g !== undefined) guess = g;
-    else waterP.then(g2 => { if (!g2) return; if (isSpot) waterFound(); opts.onWater?.(g2); });
+    else waterP.then(g2 => { if (!g2) return; if (isSpot && !g2.temporary) waterFound(); opts.onWater?.(g2); });
   }
   // Su tipi deniz çıktı ama noktada dalga verisi yok (kıyı): en yakın deniz verisini al
   if (guess?.type === 'sea' && !wantSea0 && !cond.seaDetected) cond = await getConditions(place.lat, place.lng, { wantSea: true }).catch(() => cond);
@@ -1328,7 +1341,7 @@ function renderDetail() {
         <div class="sc ${scoreClass(modeVal(r))}">${combo ? '🎣💨' : '🎣'} ${fmt(modeVal(r), 1)}</div>
         ${r.danger ? '<div>⚠️</div>' : ''}
       </button>`).join('')}</div>
-      <p class="chart-note">${fine.some(r => r.fine) ? '15 dakikalık model verisi kullanılıyor.' : 'Saatlik verilerin arası hesaplanarak gösteriliyor.'} Bir ana dokunarak seçin.</p>
+      <p class="chart-note">Saatlik tahminin arası hesaplanarak gösteriliyor. Bir ana dokunarak seçin.</p>
     </div>
 
     <div class="card"><h3>🌤️ Saat saat hava</h3>
@@ -1386,13 +1399,15 @@ function renderDetail() {
       ${type === 'lake' && a.env?.lake ? `<p class="shore-line">🏞️ Göl: <b>${esc(LAKE_SIZES[a.env.size].label)}</b> (${esc(lakeSourceText(a.env.lake))}). ${{ small: 'Küçük gölet havaya çabuk tepki verir: hava soğuyunca su da hızla serinler.', medium: 'Orta göl havayı birkaç gün geriden izler.', large: 'Büyük ve derin göl havaya yavaş tepki verir: ani soğumada su az serinler, sonbaharda havadan ılık kalır.' }[a.env.size]}</p>` : ''}
       <p class="shore-line">🧭 Suya bakış yönü: <b>${a.shoreInfo?.bearing != null ? dirName8(a.shoreInfo.bearing) : a.shoreInfo?.open ? 'her yanı su' : 'bulunamadı'}</b>${a.shoreInfo?.manual ? ' (elle seçildi)' : a.shoreInfo ? ' (otomatik)' : ''}
         ${a.shore != null && sel.windDir != null ? `<br>💨 Rüzgar şu an: <b>${{ onshore: 'sudan kıyınıza doğru', offshore: 'arkanızdan, karadan suya', cross: 'yandan' }[windRelation(sel.windDir, a.shore)]}</b> (${esc(windName(sel.windDir, true))})` : ''}
-        <br><small>Yanlışsa meraya basılı tutup "Tüm bilgileri düzenle"den değiştirebilirsiniz.</small></p></div>
+        <br><small>Yanlışsa meraya basılı tutup "Tüm bilgileri düzenle"den değiştirebilirsiniz.</small></p>
+      ${(!place.water || place.water === 'auto') ? `<p class="shore-line">${a.guess?.unsure ? '⚠️ Yakında hem göl hem deniz var; su tipi yanlışsa yukarıdan elle seçin. ' : ''}${a.guess?.temporary ? '⚠️ İnternet zayıfken algılandı, kesin değil. ' : ''}<button class="link-btn" id="wx-redetect">🔄 Su tipini yeniden algıla</button></p>` : ''}
+      <p class="muted" style="font-size:.8rem"><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></p></div>
     <div class="card"><h3>🌤️ Ayrıntılı hava (${hh(sel.date)})</h3><div class="metrics">
       ${metric('Rüzgar', `${arrow(sel.windDir)} ${fmt(sel.wind)} km/s`, `${windName(sel.windDir)} · hamle ${fmt(sel.gust)}`)}
       ${metric('Hava', `${fmt(sel.temp)} °C`, `hissedilen ${fmt(sel.feels)} °C`)}
-      ${metric('Su sıcaklığı', sel.waterTemp == null ? '—' : `${sel.waterTempEstimated ? '~' : ''}${fmt(sel.waterTemp)} °C`, sel.waterTempEstimated ? waterNote(a) : 'ölçülen deniz suyu')}
+      ${metric('Su sıcaklığı', sel.waterTemp == null ? '—' : `${sel.waterTempEstimated ? '~' : ''}${fmt(sel.waterTemp)} °C`, sel.waterTempEstimated ? waterNote(a) : `deniz modeli${cond.marineDist ? ` (~${cond.marineDist} km açıkta)` : ''}`)}
       ${type === 'sea' ? metric('Dalga', sel.wave == null ? '—' : `${fmt(sel.wave, 1)} m`, `periyot ${fmt(sel.wavePeriod, 0)} sn · soluğan ${fmt(sel.swell, 1)} m`) : ''}
-      ${type === 'sea' ? metric('Akıntı', sel.current == null ? '—' : `${fmt(sel.current, 1)} km/s`, sel.currentDir == null ? '' : `yönü ${windName(sel.currentDir, true)} tarafı`) : ''}
+      ${type === 'sea' ? metric('Akıntı', sel.current == null ? '—' : `${fmt(sel.current, 1)} km/s`, sel.currentDir == null ? '' : `${['kuzeye', 'kuzeydoğuya', 'doğuya', 'güneydoğuya', 'güneye', 'güneybatıya', 'batıya', 'kuzeybatıya'][Math.round((((sel.currentDir % 360) + 360) % 360) / 45) % 8]} doğru akıyor${a.place.lat >= 40.99 && a.place.lat <= 41.24 && a.place.lng >= 28.97 && a.place.lng <= 29.16 ? ' · model Boğaz\'ı göremez, güvenmeyin' : ''}`) : ''}
       ${metric('Gökyüzü', `<span style="font-size:1rem">${weatherText(sel.code) || '—'}</span>`, `bulut %${fmt(sel.cloud)}`)}
       ${metric('Yağış', `${fmt(sel.precip, 1)} mm`, `ihtimal %${fmt(sel.rainProb)}`)}
       ${metric('Nem', `%${fmt(sel.humidity)}`, '')}
@@ -1411,6 +1426,7 @@ function renderDetail() {
     ${cond.offline ? `<p class="warn">Çevrimdışı: ${new Date(cond.fetchedAt).toLocaleString('tr-TR')} tarihli veri.</p>` : ''}
 
     <p class="muted fresh">🕒 Güncel: ${fmtTime(cond.fetchedAt)} · ${WATER_TYPES[type].icon} ${WATER_TYPES[type].label} <button id="wx-refresh" class="btn small">↻ Yenile</button></p>
+    ${cond.marineStale ? '<p class="warn">🌊 Deniz servisine şu an ulaşılamadı; dalga ve deniz suyu için son alınan veri gösteriliyor.</p>' : ''}
     ${cond.marineDist ? `<p class="warn">🌊 Bu noktada deniz modeli boş döndüğü için dalga ve deniz suyu sıcaklığı ~${cond.marineDist} km uzaktaki en yakın deniz noktasından alındı.</p>` : ''}
     ${type === 'sea' && !cond.seaDetected ? `<p class="warn">🌊 Bu nokta için dalga verisi bulunamadı. Puan dalgasız hesaplandı.</p>` : ''}
 
@@ -1455,6 +1471,7 @@ function renderDetail() {
 }
 
 async function onDetailClick(e) {
+  if (e.target.id === 'wx-redetect') { redetectWater(); return; }
   const day = e.target.closest('[data-day]');
   if (day) {
     detail.day = day.dataset.day;
@@ -1491,10 +1508,20 @@ async function onDetailClick(e) {
   }
 }
 
+async function redetectWater() {
+  const place = detail.a.place;
+  forgetWater(place.lat, place.lng);
+  toast('Su tipi yeniden algılanıyor…');
+  const t = detail.sel.date.getTime();
+  detail.a = await analyze(place, { waitWater: true });
+  detail.sel = (detail.sel.slot ? rowAt(detail.a, new Date(t)) : detail.a.rows.find(r => r.date.getTime() === t)) || detail.a.rows[0];
+  renderDetail(); if (state.tab === 'map') renderRank();
+}
 async function onDetailWaterChange(e) {
   if (e.target.id !== 'wx-water' && e.target.id !== 'wx-lake') return;
   const field = e.target.id === 'wx-water' ? 'water' : 'lakeSize';
   const place = { ...detail.a.place, [field]: e.target.value };
+  if (field === 'water' && e.target.value !== 'auto') rememberWater(place.lat, place.lng, e.target.value); // elle düzeltme hatırlanır
   const spot = spotById(place.key) || spotById(place.id);
   if (spot) { const cur = await db.get('spots', spot.id).catch(() => null); await db.put('spots', { ...(cur || spot), [field]: e.target.value }); await loadData(); refreshAll(); }
   const t = detail.sel.date.getTime();
@@ -1637,7 +1664,7 @@ function renderMore() {
     <div class="card"><h3>🗑️ Silinenler</h3><p class="muted">Silinen meralar ve avlar 30 gün burada durur, geri alınabilir.</p><div id="trash-box">yükleniyor…</div></div>
 
     <div class="card"><h3>ℹ️ Hakkında</h3>
-      <p class="muted">Rastgele v1 · Kıyı balıkçıları için av günlüğü. Harita: © OpenStreetMap katkıcıları. Hava: Open-Meteo.</p>
+      <p class="muted">Rastgele v1 · Kıyı balıkçıları için av günlüğü. Kıyı, göl ve dere balıkçıları için. Harita: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> katkıcıları. <a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a> (CC BY 4.0).</p>
     </div>`,
   };
   setTimeout(fillMembers, 0);
