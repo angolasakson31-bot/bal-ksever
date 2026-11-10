@@ -15,7 +15,44 @@ const ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://rastgele-nsyh.onrender.
 const STORES = new Set(['spots', 'catches']);
 const CODE_RE = /^[A-Za-z0-9]{16,40}$/;
 const ID_RE = /^[A-Za-z0-9._:-]{1,80}$/;
-const MAX_BODY = 64 * 1024; // bir kayıt en fazla 64 KB (fotoğraflar Cloudinary'de)
+const MAX_BODY = 24 * 1024; // bir kayıt en fazla 24 KB (fotoğraflar Cloudinary'de)
+const MAX_ITEMS = 5000;      // grup başına en fazla kayıt (veritabanı doldurulamasın)
+const MAX_MEMBERS = 100;     // grup başına en fazla üye
+const MAX_GROUPS_DAY = 200;  // sunucu genelinde günde en fazla yeni grup
+
+// ——— Kayıt doğrulama: yalnız beklenen alanlar, beklenen tiplerde saklanır ———
+const str = (v, n) => (v == null ? '' : String(v)).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ').slice(0, n);
+const num = (v, min = -Infinity, max = Infinity) => { const x = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(x) && x >= min && x <= max ? x : null; };
+const oneOf = (v, list, d) => (list.includes(v) ? v : d);
+const stamp = v => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v.slice(0, 40) : undefined);
+const photoUrl = u => (typeof u === 'string' && u.length < 500 && /^https:\/\/res\.cloudinary\.com\/[A-Za-z0-9_-]+\/image\/upload\/[A-Za-z0-9_.,\/%:-]+$/.test(u) ? u
+  : (process.env.ALLOW_LOCAL_PHOTOS && typeof u === 'string' && /^http:\/\/localhost:\d+\/[\w./-]+$/.test(u) ? u : null));
+function cleanDoc(store, d, id) {
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+  const out = { id };
+  for (const k of ['createdAt', 'updatedAt']) { const t = stamp(d[k]); if (t !== undefined) out[k] = t; }
+  if (store === 'spots') {
+    const lat = num(d.lat, -90, 90), lng = num(d.lng, -180, 180);
+    if (lat == null || lng == null) return null;
+    const sm = d.shoreManual;
+    Object.assign(out, { name: str(d.name, 60).trim() || 'Mera', lat, lng, type: str(d.type, 30) || 'Diğer',
+      water: oneOf(d.water, ['auto', 'sea', 'lake', 'river'], 'auto'), notes: str(d.notes, 2000),
+      shoreManual: sm === 'none' || sm === 'auto' ? sm : num(sm, 0, 360) != null ? String(num(sm, 0, 360)) : 'auto',
+      lakeSize: oneOf(d.lakeSize, ['auto', 'small', 'medium', 'large'], 'auto') });
+    if (d.shore && typeof d.shore === 'object') out.shore = { bearing: num(d.shore.bearing, 0, 360), ...(d.shore.open ? { open: true } : {}) };
+    return out;
+  }
+  const lat = num(d.lat, -90, 90), lng = num(d.lng, -180, 180);
+  Object.assign(out, { species: str(d.species, 60).trim() || 'Balık', length: num(d.length, 0, 1000), weight: num(d.weight, 0, 1e6),
+    count: Math.max(1, Math.min(9999, Math.round(num(d.count) ?? 1))),
+    date: typeof d.date === 'string' && !Number.isNaN(Date.parse(d.date)) ? new Date(d.date).toISOString() : new Date().toISOString(),
+    bait: str(d.bait, 60), method: str(d.method, 60), spotId: d.spotId != null && ID_RE.test(String(d.spotId)) ? String(d.spotId) : null,
+    lat: lat != null && lng != null ? lat : null, lng: lat != null && lng != null ? lng : null, released: !!d.released, notes: str(d.notes, 2000) });
+  if (Array.isArray(d.photos)) out.photos = d.photos.slice(0, 6).map((p, i) => (p && photoUrl(p.url) ? { id: ID_RE.test(String(p.id ?? '')) ? String(p.id).slice(0, 40) : 'p' + i, url: photoUrl(p.url) } : null)).filter(Boolean);
+  const pu = photoUrl(d.photoUrl) || out.photos?.[0]?.url;
+  if (pu) out.photoUrl = pu;
+  return out;
+}
 
 // ——— Depolama: MongoDB ya da (test için) bellek ———
 async function makeStore() {
@@ -26,6 +63,7 @@ async function makeStore() {
     const groups = new Map(), items = new Map(), members = new Map();
     return {
       putMember: async m => { members.set(m._id, m); },
+      getMember: async id => members.get(id) || null,
       members: async g => [...members.values()].filter(m => m.g === g),
       authorCounts: async g => {
         const out = {};
@@ -51,6 +89,7 @@ async function makeStore() {
   await members.createIndex({ g: 1 });
   return {
     putMember: m => members.replaceOne({ _id: m._id }, m, { upsert: true }),
+    getMember: id => members.findOne({ _id: id }),
     members: g => members.find({ g }).toArray(),
     authorCounts: async g => {
       const rows = await items.aggregate([{ $match: { g, deleted: { $ne: true }, createdBy: { $type: 'string' } } },
@@ -75,7 +114,7 @@ const hits = new Map();
 function limited(ip, key, max, windowMs) {
   const k = ip + '|' + key, now = Date.now();
   const h = hits.get(k);
-  if (!h || now - h.t > windowMs) { hits.set(k, { t: now, n: 1 }); return false; }
+  if (!h || now - h.t > windowMs) { if (hits.size > 50000) hits.clear(); hits.set(k, { t: now, n: 1 }); return false; }
   h.n += 1;
   return h.n > max;
 }
@@ -97,8 +136,9 @@ function send(res, status, body, origin) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
-    req.on('data', c => { size += c.length; if (size > MAX_BODY) { reject(Object.assign(new Error('Kayıt çok büyük'), { status: 413 })); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { reject(Object.assign(new Error('Geçersiz veri'), { status: 400 })); } });
+    let tooBig = false;
+    req.on('data', c => { size += c.length; if (size > MAX_BODY) { tooBig = true; chunks.length = 0; if (size > 2e6) req.destroy(); } else if (!tooBig) chunks.push(c); });
+    req.on('end', () => { if (tooBig) return reject(Object.assign(new Error('Kayıt çok büyük (not çok uzun olabilir)'), { status: 413 })); try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { reject(Object.assign(new Error('Geçersiz veri'), { status: 400 })); } });
     req.on('error', reject);
   });
 }
@@ -108,7 +148,9 @@ async function main() {
   const server = http.createServer(async (req, res) => {
     const reqOrigin = req.headers.origin;
     const origin = reqOrigin && (ORIGINS.includes('*') || ORIGINS.includes(reqOrigin)) ? reqOrigin : null;
-    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    // İstemci X-Forwarded-For'u kendisi yazabilir; güvenilir olan, proxy'nin (Render) eklediği SON değerdir
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',').map(x => x.trim()).filter(Boolean);
+    const ip = xff[xff.length - 1] || req.socket.remoteAddress || '';
     try {
       const url = new URL(req.url, 'http://x');
       const p = url.pathname.split('/').filter(Boolean);
@@ -119,8 +161,8 @@ async function main() {
 
       // Grup oluştur: POST /api/groups {name}
       if (req.method === 'POST' && p[0] === 'api' && p[1] === 'groups' && p.length === 2) {
-        if (limited(ip, 'create', 10, 3600e3)) return send(res, 429, { error: 'Çok fazla grup oluşturuldu, sonra deneyin' }, origin);
-        const body = await readBody(req);
+        if (limited(ip, 'create', 10, 3600e3) || limited('*', 'create-all', MAX_GROUPS_DAY, 86400e3)) return send(res, 429, { error: 'Çok fazla grup oluşturuldu, sonra deneyin' }, origin);
+        const body = (await readBody(req)) || {};
         const name = cleanText(body.name, 40) || 'Balık grubu';
         const g = { _id: newCode(), name, createdAt: Date.now(), by: cleanText(body.by, 30) };
         await store.addGroup(g);
@@ -142,11 +184,12 @@ async function main() {
       // Üye bildirimi (gruba girince / arada bir): POST /api/g/:code/members {id, name}
       if (req.method === 'POST' && p[3] === 'members' && p.length === 4) {
         if (limited(ip, 'member', 60, 60e3)) return send(res, 429, { error: 'Çok fazla istek' }, origin);
-        const body = await readBody(req);
+        const body = (await readBody(req)) || {};
         const id = String(body.id || ''), name = cleanText(body.name, 30);
         if (!/^[A-Za-z0-9-]{8,40}$/.test(id) || !name) return send(res, 400, { error: 'Geçersiz üye' }, origin);
         const _id = `${code}:${id}`;
-        const old = (await store.members(code)).find(m => m._id === _id);
+        const old = await store.getMember(_id);
+        if (!old && (await store.members(code)).length >= MAX_MEMBERS) return send(res, 403, { error: 'Grup üye sınırına ulaştı' }, origin);
         await store.putMember({ _id, g: code, id, name, lastSeen: Date.now(), joinedAt: old?.joinedAt || Date.now() });
         return send(res, 200, { ok: true }, origin);
       }
@@ -173,7 +216,7 @@ async function main() {
         if (limited(ip, 'write', 120, 60e3)) return send(res, 429, { error: 'Çok fazla kayıt, biraz bekleyin' }, origin);
         const [, , , st, id] = p;
         const _id = `${code}:${st}:${id}`;
-        const body = req.method === 'PUT' ? await readBody(req) : {};
+        const body = req.method === 'PUT' ? ((await readBody(req)) || {}) : {};
         const by = cleanText(body.by ?? url.searchParams.get('by'), 30);
         const prev = await store.getItem(_id);
         const now = Date.now();
@@ -181,10 +224,9 @@ async function main() {
         // Silinen kaydın içeriği saklanır (yanlışlıkla silmede veritabanından geri getirilebilsin)
         if (req.method === 'DELETE') Object.assign(item, { deleted: true, doc: null, deletedDoc: prev?.doc || prev?.deletedDoc || null });
         else {
-          const doc = body.doc && typeof body.doc === 'object' && !Array.isArray(body.doc) ? { ...body.doc } : null;
-          if (!doc) return send(res, 400, { error: 'Kayıt yok' }, origin);
-          delete doc.photo; // fotoğraf dosyası sunucuya gelmez, yalnız photoUrl
-          doc.id = id;
+          const doc = cleanDoc(st, body.doc, id); // yalnız beklenen alanlar ve tipler
+          if (!doc) return send(res, 400, { error: 'Kayıt geçersiz' }, origin);
+          if (!prev && (await store.count(code)) >= MAX_ITEMS) return send(res, 403, { error: 'Grup kayıt sınırına ulaştı' }, origin);
           item.doc = doc;
         }
         await store.put(item);
@@ -196,6 +238,7 @@ async function main() {
       return send(res, e.status || 500, { error: e.status ? e.message : 'Sunucu hatası' }, origin);
     }
   });
+  server.requestTimeout = 30000; server.headersTimeout = 15000;
   server.listen(PORT, () => console.log(`rastgele-api ${PORT} portunda; izinli siteler: ${ORIGINS.join(', ')}`));
 }
 

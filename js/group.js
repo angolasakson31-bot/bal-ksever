@@ -4,12 +4,15 @@
 // sunucudaki yenilikler düzenli aralıklarla çekilir. İnternet yokken de çalışır.
 import * as db from './db.js';
 import { API_URL, CLOUDINARY } from './config.js';
+import { cleanDoc, safePhotoUrl } from './clean.js';
 
 const ls = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* yok */ } };
 
-export const apiUrl = () => (ls('apiUrl') || API_URL).replace(/\/+$/, '');
-const cloud = () => ({ cloud: ls('cloudName') || CLOUDINARY.cloud, preset: ls('cloudPreset') || CLOUDINARY.preset });
+// Sunucu/Cloudinary adresi yalnız yerel testte değiştirilebilir (yayında telefondaki bir ayarla başka sunucuya yönlendirilemesin)
+const DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+export const apiUrl = () => ((DEV && ls('apiUrl')) || API_URL).replace(/\/+$/, '');
+const cloud = () => ({ cloud: (DEV && ls('cloudName')) || CLOUDINARY.cloud, preset: (DEV && ls('cloudPreset')) || CLOUDINARY.preset });
 export const groupReady = () => !!apiUrl();
 export const photoReady = () => { const c = cloud(); return !!(c.cloud && c.preset); };
 
@@ -27,7 +30,18 @@ export function setMyName(n, code = group.code) {
 }
 
 const CODE_RE = /^[A-Za-z0-9]{16,40}$/;
-export const codeFromUrl = () => { const c = new URLSearchParams(location.search).get('grup'); return c && CODE_RE.test(c) ? c : null; };
+const ss = { get: () => { try { return sessionStorage.getItem('grup'); } catch { return null; } }, set: v => { try { v ? sessionStorage.setItem('grup', v) : sessionStorage.removeItem('grup'); } catch { /* yok */ } } };
+// Grup kodu linkten alınır, sonra adres çubuğundan silinir (geçmişte, ekran görüntüsünde, paylaşımda görünmesin);
+// sayfa yenilenince aynı sekmede grup açık kalsın diye sekme belleğinde tutulur.
+export const codeFromUrl = () => {
+  const c = new URLSearchParams(location.search).get('grup') || ss.get();
+  return c && CODE_RE.test(c) ? c : null;
+};
+export function hideCodeInUrl(code) {
+  ss.set(code);
+  try { if (new URLSearchParams(location.search).has('grup')) history.replaceState(null, '', location.pathname); } catch { /* yok */ }
+}
+export const exitGroupTab = () => ss.set(null);
 export const groupLink = code => `${location.origin}${location.pathname}?grup=${code}`;
 
 // Katılınan gruplar (bu telefonda)
@@ -49,7 +63,12 @@ export async function leaveGroup(code) {
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch(apiUrl() + path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  // 30 sn'de cevap gelmezse vazgeç (uyuyan sunucu ~1 dk'da uyanır; sonraki denemede gelir)
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 30000);
+  let res;
+  try { res = await fetch(apiUrl() + path, { ...opts, signal: ctl.signal, headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) } }); }
+  catch { throw new Error('Grup sunucusuna ulaşılamadı (internet yok ya da sunucu uyanıyor)'); }
+  finally { clearTimeout(to); }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body.error || `Sunucu hatası (${res.status})`), { status: res.status });
   return body;
@@ -86,6 +105,7 @@ let timer = null;
 export async function enterGroup(code, onChange) {
   listener = onChange || (() => {});
   group.code = code;
+  hideCodeInUrl(code);
   group.name = joinedGroups().find(g => g.code === code)?.name || 'Grup';
   db.use('rastgele-g-' + code);
   db.onWrite(queueChange);
@@ -110,17 +130,28 @@ async function queueChange(store, op, value) {
   sync();
 }
 
+const folders = new Map();
+async function folderFor(code) {
+  if (!folders.has(code)) {
+    let f = 'g';
+    try { f = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('rastgele:' + code)))].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join(''); } catch { /* eski tarayıcı */ }
+    folders.set(code, f);
+  }
+  return folders.get(code);
+}
 // Cloudinary'ye fotoğraf yükle (imzasız ayar ile)
 async function uploadPhoto(blob, id) {
   const c = cloud();
   const fd = new FormData();
   fd.append('file', blob, `${id}.jpg`);
   fd.append('upload_preset', c.preset);
-  fd.append('folder', `rastgele/${group.code}`);
+  fd.append('folder', `rastgele/${await folderFor(group.code)}`); // grup kodu fotoğraf adresinde görünmesin
   const res = await fetch(`https://api.cloudinary.com/v1_1/${c.cloud}/image/upload`, { method: 'POST', body: fd });
   const j = await res.json().catch(() => ({}));
   if (!res.ok || !j.secure_url) throw Object.assign(new Error(j.error?.message || 'Fotoğraf yüklenemedi'), { status: res.status });
-  return j.secure_url.replace('/upload/', '/upload/c_limit,w_1280,q_auto,f_auto/');
+  const url = safePhotoUrl(j.secure_url.replace('/upload/', '/upload/c_limit,w_1280,q_auto,f_auto/'));
+  if (!url) throw Object.assign(new Error('Fotoğraf adresi geçersiz'), { status: 400 });
+  return url;
 }
 
 // Kalıcı hata: tekrar denemenin anlamı yok (ör. kayıt çok büyük, geçersiz). Ağ hatası / sunucu uyuyor ise tekrar denenir.
@@ -210,7 +241,9 @@ async function pull() {
       }
       const local = await db.get(it.store, it.id);
       if (local && local.updatedAt === it.updatedAt) continue; // zaten güncel
-      const doc = { ...it.doc, by: it.createdBy || it.by, editedBy: it.by, updatedAt: it.updatedAt };
+      // Sunucudan gelen kayıt beklenen tiplere çevrilir; bozuksa atlanır
+      const doc = cleanDoc(it.store, { ...it.doc, id: it.id, by: it.createdBy || it.by, editedBy: it.by, updatedAt: it.updatedAt });
+      if (!doc) continue;
       if (local?.photo && doc.photoUrl === local.photoUrl) doc.photo = local.photo; // fotoğraf dosyası telefonda dursun
       if (Array.isArray(doc.photos) && Array.isArray(local?.photos)) {
         const mine = new Map(local.photos.filter(p => p.blob).map(p => [p.id, p]));
