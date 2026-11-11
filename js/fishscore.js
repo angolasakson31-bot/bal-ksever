@@ -66,22 +66,18 @@ export function noonElevation(date, lat) {
 
 // Işık evresi. "Öğle": güneşin gerçek tepe saati (doğuş–batış ortası) ±2 saat ve güneş yeterince yüksek
 // (kışın güneş alçakta, ~25°: öğle güneşi balığı derine itmez).
-// Alacakaranlık ağırlığı (0–1). Karanlık tarafta (batıştan sonra / doğuştan önce) hava hızla kararır:
-// yarım saate kadar tam, 1 saatte biter. Aydınlık tarafta (batıştan önce / doğuştan sonra) ışık yavaş azalır:
-// 1 saate kadar tam, 1,5 saatte biter.
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const twWeight = d => (d >= 0 ? clamp((1 - d) / 0.5, 0, 1) : clamp((1.5 + d) / 0.5, 0, 1)); // d: karanlık tarafa doğru saat
-// Dönen: { phase: etiket (türler için), base: alacakaranlık dışındaki evre, tw: alacakaranlık ağırlığı }
+// Dönen: { phase: etiket (türler için), base: alacakaranlık dışındaki evre, near: doğuş/batışa uzaklık (saat) }
 function lightInfo(date, suns, midMin = 30, lat = 41) {
   const sun = suns.find(s => s.rise.toDateString() === date.toDateString());
   if (!sun) return null;
   const t = date.getTime() + midMin * 60000; // zaman diliminin ortası
-  const tw = Math.max(twWeight((sun.rise.getTime() - t) / 3600e3), twWeight((t - sun.set.getTime()) / 3600e3));
+  const near = Math.min(Math.abs(t - sun.rise.getTime()), Math.abs(t - sun.set.getTime())) / 3600000;
   const noon = (sun.rise.getTime() + sun.set.getTime()) / 2;
   const base = t < sun.rise.getTime() || t > sun.set.getTime() ? 'night'
     : Math.abs(t - noon) <= 2 * 3600e3 && noonElevation(date, lat) >= 35 ? 'midday' : 'day';
-  return { phase: tw >= 0.5 ? 'twilight' : base, base, tw };
+  return { phase: near <= 1.5 ? 'twilight' : base, base, near };
 }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // Parçalı doğrusal eğri: [[x, y], ...] (basamak yerine yumuşak geçiş)
 function curve(pts, x) {
   if (x <= pts[0][0]) return pts[0][1];
@@ -191,8 +187,7 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     const add = (v, text) => { s += v; reasons.push([v, text]); };
     const past = n => hours.slice(Math.max(0, i - n), i);
 
-    // 1) Işık. Alacakaranlık keskin bir sınır değil: batıştan sonra yarım saat tam, 1 saatte biter;
-    //    batıştan önce 1 saat tam, 1,5 saatte başlar (doğuşta tersi).
+    // 1) Işık. Alacakaranlık keskin bir sınır değil: doğuş/batışa 1 saatten yakınsa tam, 2 saatte biter.
     const li = lightInfo(r.date, suns, mid, lat);
     const light = li?.phase ?? null;
     if (li) {
@@ -202,7 +197,7 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
       const sunPen = (noonElevation(r.date, lat) >= 50 ? -0.8 : -0.4) * (type === 'lake' ? 0.5 : 1);
       const base = li.base === 'night' ? (type === 'sea' ? 0.5 : 0.3)
         : li.base === 'midday' ? sunPen + (overcast - sunPen) * cloudy : overcast;
-      const tw = li.tw;
+      const tw = clamp(2 - li.near, 0, 1);
       const pts = r1(base + tw * ((type === 'sea' ? 2 : 1.8) - base));
       add(pts, tw >= 0.95 ? 'Alacakaranlık: avlanma saati' : tw > 0 ? 'Alacakaranlığa yakın'
         : li.base === 'night' ? 'Gece' : li.base === 'midday' && pts < 0 ? 'Öğle güneşi, balık derine çekilir' : 'Kapalı hava');
