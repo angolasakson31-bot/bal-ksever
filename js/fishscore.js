@@ -195,21 +195,27 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
     //    batıştan önce 1 saat tam, 1,5 saatte başlar (doğuşta tersi).
     const li = lightInfo(r.date, suns, mid, lat);
     const light = li?.phase ?? null;
+    const wt = type === 'sea' ? (r.sst ?? avg(past(24).map(h => h.sst))) : freshWaterTemp(hours, i, type, env, r.date);
     if (li) {
       const cloudy = clamp(((r.cloud ?? 0) - 50) / 30, 0, 1);       // %50'den %80'e kapanır
       const overcast = (type === 'sea' ? 0.3 : 0.5) * cloudy;
-      // Gölde gündüz dip avı yapılır: öğle güneşi cezası yarı
-      const sunPen = (noonElevation(r.date, lat) >= 50 ? -0.8 : -0.4) * (type === 'lake' ? 0.5 : 1);
+      // Tatlı su: sazan, kızılkanat, levrek, turna, alabalık gündüz de beslenir (dip ve şamandıra avı gündüz yapılır).
+      // Soğuk suda (< 12 °C) güneşli gündüz sığlığı ısıtır: balık öğle–öğleden sonra daha aktif.
+      const lake = type !== 'sea'; // göl ve dere (tatlı su balıkları)
+      const coldSun = lake && wt != null && wt < 12 ? 0.5 * (1 - cloudy) : 0;
+      const sunPen = lake ? (coldSun ? 0 : noonElevation(r.date, lat) >= 50 ? -0.3 : 0) : (noonElevation(r.date, lat) >= 50 ? -0.8 : -0.4);
+      const dayBase = lake ? Math.max(0.3, overcast) + coldSun : overcast;
       const base = li.base === 'night' ? (type === 'sea' ? 0.5 : 0.3)
-        : li.base === 'midday' ? sunPen + (overcast - sunPen) * cloudy : overcast;
+        : li.base === 'midday' ? sunPen + (Math.max(dayBase, overcast) - sunPen) * (lake ? 1 : cloudy) : dayBase;
       const tw = li.tw;
       const pts = r1(base + tw * ((type === 'sea' ? 2 : 1.8) - base));
       add(pts, tw >= 0.95 ? 'Alacakaranlık: avlanma saati' : tw > 0 ? 'Alacakaranlığa yakın'
-        : li.base === 'night' ? 'Gece' : li.base === 'midday' && pts < 0 ? 'Öğle güneşi, balık derine çekilir' : 'Kapalı hava');
+        : li.base === 'night' ? 'Gece' : pts < 0 ? 'Öğle güneşi, balık derine çekilir'
+        : coldSun && pts >= 0.5 ? 'Soğuk suda güneşli gündüz: sığlık ısınır, balık hareketlenir'
+        : lake ? (cloudy > 0.5 ? 'Kapalı hava, gündüz beslenme' : 'Gündüz: tatlı su balığı beslenir') : 'Kapalı hava');
     }
 
     // 2) Su sıcaklığı
-    const wt = type === 'sea' ? (r.sst ?? avg(past(24).map(h => h.sst))) : freshWaterTemp(hours, i, type, env, r.date);
     const waterTemp = wt, waterTempEstimated = type !== 'sea' || r.sst == null;
     let cooled = false;
     if (wt != null) {
@@ -374,11 +380,12 @@ export function windScore(r, i, hours, type, lat, lng, shore = null, opts = {}) 
   const rel = windRelation(r.windDir, shore);
   // Lodos cezası verildiyse kıyı yönü ayrıca sayılmaz (kuytu kıyı, rüzgar alan kıyıdan kötü çıkmasın)
   if (!lodos) {
-    if (rel === 'onshore' && w >= 8 && w < 30) addDir(0.6, 'Rüzgar sudan kıyınıza esiyor: yem ve balık kıyıya gelir');
+    // Yem ve balığı kıyıya taşıyan, belirgin ve sürekli rüzgardır; hafif esinti değil
+    if (rel === 'onshore' && w >= 15 && w < 30) addDir(0.4, 'Rüzgar sudan kıyınıza esiyor: yem ve balık kıyıya gelir');
     else if (rel === 'onshore' && w >= 30) addDir(type === 'sea' ? -0.5 : -0.3, 'Sert rüzgar tam kıyınıza vuruyor: dalga ve köpük, dikkat');
     else if (rel === 'offshore' && w >= 8) addDir(-0.4, 'Rüzgar arkanızdan (karadan) esiyor: yem açığa gider, kıyı suyu durgun');
   }
-  if (type !== 'sea' && w >= 8 && w < 30 && rel === 'onshore') {
+  if (type !== 'sea' && w >= 15 && w < 30 && rel === 'onshore') {
     const last = hours.slice(Math.max(0, i - 24), i + 1).filter(h => h.windDir != null);
     const sameDir = last.length >= 20 && last.every(h => Math.abs(((h.windDir - r.windDir + 540) % 360) - 180) <= 45);
     if (sameDir) addDir(0.3, '24 saattir aynı yön: yem rüzgarın vurduğu kıyıda birikir');
