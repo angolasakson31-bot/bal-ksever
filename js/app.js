@@ -736,6 +736,8 @@ async function deleteSpot() {
 // ————————————————— Tahmin: hava + balık skoru —————————————————
 const fmt = (v, d = 0) => v == null || Number.isNaN(v) ? '—' : Number(v).toFixed(d);
 const hh = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+// Puanın ait olduğu zaman aralığı: 15 dakikalık dilimde "19:15–19:30", saatlik satırda "19:00"
+const slotLabel = r => (r.slot ? `${hh(r.date)}–${hh(new Date(r.date.getTime() + 15 * 60000))}` : hh(r.date));
 const dayShort = d => d.toLocaleDateString('tr-TR', { weekday: 'short' });
 const effectiveType = (place, cond, guess) => place.water && place.water !== 'auto' ? place.water : (guess?.type || (cond.seaDetected ? 'sea' : 'lake'));
 
@@ -1020,7 +1022,7 @@ function spotCard(x, i, total, no = `${i + 1}<small>/${total}</small>`) {
       ${scorePill({ score: x.v })}<span class="rank-lbl">${scoreShort(x.v, r.danger)}</span>
     </span>
     <span class="rank-name">${state.newIds?.has(a.place.key) ? '<span class="tag new">🆕</span> ' : ''}${esc(a.place.name)} <span class="tag">${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}</span>${a.place.by ? ` <span class="by">👤 ${esc(a.place.by)}</span>` : ''}</span>
-    <span class="rank-time">${a.cond.offline ? `<b class="stale">⚠️ ${hh(new Date(a.cond.fetchedAt))} verisi</b> · ` : ''}${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${hh(r.date)} · ${esc(summaryLine(r, a.type))}</span>
+    <span class="rank-time">${a.cond.offline ? `<b class="stale">⚠️ ${hh(new Date(a.cond.fetchedAt))} verisi</b> · ` : ''}${r.danger ? '⚠️ Güvenlik uyarısı · ' : ''}${dayShort(r.date)} ${slotLabel(r)} · ${esc(summaryLine(r, a.type))}</span>
     ${miniWx(a, r.date)}
     <span class="rank-meta">🐟 ${esc(sp)}</span>
   </button>`;
