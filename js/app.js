@@ -1269,7 +1269,7 @@ function renderDetail() {
   // Şu andan itibaren (veya gidiş–dönüş aralığı) ayrıntılı zaman şeridi
   const fineFrom = detail.trip ? detail.trip.start : new Date();
   const fineMin = detail.trip ? (detail.trip.end - detail.trip.start) / 60000 : 6 * 60;
-  const fine = slots(a, fineFrom, fineMin, 30);
+  const fine = slots(a, fineFrom, fineMin, detail.step);
   const fineAvg = fine.length ? fine.reduce((x, r) => x + modeVal(r), 0) / fine.length : null;
   const fineBest = fine.length ? bestSafe(fine) : null;
   const combo = rankMode === 'combo';
@@ -1326,6 +1326,7 @@ function renderDetail() {
 
     ${!detail.trip ? '' : `<div class="card fine-card"><h3>⏱️ Gidiş–dönüş: ${hh(detail.trip.start)} → ${hh(detail.trip.end)}</h3>
       <div class="fine-head">
+        <span class="seg-mini">${[30, 15].map(m => `<button data-step="${m}" class="${detail.step === m ? 'active' : ''}">${m} dk</button>`).join('')}</span>
         ${fineAvg != null ? `<span class="muted">ortalama <b>${fmt(fineAvg, 1)}</b> · en iyi an <b>${hh(fineBest.date)}</b> (${fmt(modeVal(fineBest), 1)})</span>` : ''}
       </div>
       <div class="hours wx-strip">${fine.map(r => `<button class="hour wxh ${sel.slot && r.date.getTime() === sel.date.getTime() ? 'now' : ''}" data-slot="${r.date.getTime()}">
@@ -1465,7 +1466,7 @@ function renderDetail() {
                : `<button id="wx-save-spot">📍 Mera olarak kaydet</button>`}
     </div>
     <p class="muted">Skor ve tür tahminleri, hava verisi ve balıkçılık bilgisine dayalı tahminlerdir; kesinlik içermez.</p>`;
-  const cur = $('#wx-hours .hour.cur'); // seçili an yarım saatlik dilim olsa da şerit o saate kayar
+  const cur = $('#wx-hours .hour.cur'); // seçili an 15 dakikalık dilim olsa da şerit o saate kayar
   if (cur) cur.parentElement.scrollLeft = cur.offsetLeft - cur.parentElement.offsetLeft - 8;
 }
 
@@ -1489,6 +1490,8 @@ async function onDetailClick(e) {
   if (dt) { detail.tab = dt.dataset.dtab; renderDetail(); return; }
   const sl = e.target.closest('[data-slot]');
   if (sl) { detail.sel = rowAt(detail.a, new Date(+sl.dataset.slot)); detail.day = detail.sel.date.toDateString(); renderDetail(); return; }
+  const st = e.target.closest('.seg-mini [data-step]');
+  if (st) { detail.step = +st.dataset.step; renderDetail(); return; }
   if (e.target.id === 'wx-refresh') {
     const t = detail.sel.date.getTime();
     e.target.textContent = 'Yenileniyor…';
