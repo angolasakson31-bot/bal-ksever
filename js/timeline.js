@@ -1,8 +1,10 @@
-// Dakika hassasiyetinde tahmin: herhangi bir an için (15 dk'ya yuvarlanır) hava + balık skoru.
-// Önce Open-Meteo'nun 15 dakikalık verisi kullanılır; yoksa iki saatlik değer arasında ara değer hesaplanır.
+// Yarım saat hassasiyetinde tahmin: herhangi bir an için (yarım saate yuvarlanır) hava + balık skoru.
+// Hava verisi saatlik gelir; yarım saatlik değer iki saat arasından hesaplanır. Dilim 30 dk'lık aralığın
+// tamamını temsil eder (ışık/ay hesabı dilimin ortasına, :15 / :45'e göre yapılır).
 import { scoreRow } from './fishscore.js';
 
-const Q = 15 * 60000;
+export const SLOT_MIN = 30;
+const Q = SLOT_MIN * 60000;
 export const roundQ = d => new Date(Math.floor(new Date(d).getTime() / Q) * Q);
 
 const NUM = ['temp', 'feels', 'humidity', 'visibility', 'uv', 'wind', 'gust', 'pressure', 'cloud', 'rainProb',
@@ -46,7 +48,7 @@ export function rowAt(a, date) {
     if (q.precip15 != null) v.precip = q.precip15 * 4;
     v.fine = true;
   }
-  const r = scoreRow(v, i, H, a.cond.suns, a.type, a.place.lat, a.place.lng, 15, a.shore ?? null, a.env ?? null);
+  const r = scoreRow(v, i, H, a.cond.suns, a.type, a.place.lat, a.place.lng, SLOT_MIN, a.shore ?? null, a.env ?? null);
   a.slotCache.set(t, r);
   return r;
 }
