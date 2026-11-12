@@ -1875,7 +1875,16 @@ async function importPayload(data) {
   const ms = v => (typeof v === 'number' ? v : Date.parse(v) || 0);
   const okId = id => typeof id === 'string' && /^[A-Za-z0-9._:-]{1,80}$/.test(id);
   const dataUrl = u => (typeof u === 'string' && u.startsWith('data:image/') ? u : null);
-  const toBlob = async u => (dataUrl(u) ? (await fetch(u)).blob() : null);
+  // data: adresi elle çözülür (sayfa güvenlik kuralı fetch ile data: okumaya izin vermez)
+  const toBlob = async u => {
+    if (!dataUrl(u)) return null;
+    try {
+      const [head, b64] = u.split(',');
+      const bin = atob(b64), arr = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+      return new Blob([arr], { type: (head.match(/^data:([^;]+)/) || [])[1] || 'image/jpeg' });
+    } catch { return null; }
+  };
   // Telefondaki daha yeni kayıt, yedekteki eski haliyle ezilmesin
   const newer = async (store, rec) => { const cur = await db.get(store, rec.id).catch(() => null); return cur && ms(cur.updatedAt) > ms(rec.updatedAt); };
   for (const s2 of data.spots || []) {

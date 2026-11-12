@@ -206,7 +206,8 @@ export function scoreRow(r, i, hours, suns, type, lat, lng, spanMin = 60, shore 
       const sunPen = lake ? (coldSun ? 0 : noonElevation(r.date, lat) >= 50 ? -0.3 : 0) : (noonElevation(r.date, lat) >= 50 ? -0.8 : -0.4);
       const dayBase = lake ? Math.max(0.3, overcast) + coldSun : overcast;
       const base = li.base === 'night' ? (type === 'sea' ? 0.5 : 0.3)
-        : li.base === 'midday' ? sunPen + (Math.max(dayBase, overcast) - sunPen) * (lake ? 1 : cloudy) : dayBase;
+        // Öğle: açık havada güneş cezası (varsa), bulut arttıkça gündüz değerine yaklaşır
+        : li.base === 'midday' ? (sunPen < 0 ? sunPen + (dayBase - sunPen) * cloudy : dayBase) : dayBase;
       const tw = li.tw;
       const pts = r1(base + tw * ((type === 'sea' ? 2 : 1.8) - base));
       add(pts, tw >= 0.95 ? 'Alacakaranlık: avlanma saati' : tw > 0 ? 'Alacakaranlığa yakın'

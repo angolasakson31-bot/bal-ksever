@@ -40,8 +40,8 @@ async function getJson(url, tries = 2, timeoutMs = 10000) {
 
 // ——— Geçici hava kaydı (telefonda) ———
 // Yalnızca hava verisi; meralar/avlar burada değil (onlar veritabanında, hiç silinmez).
-// Küçük kayıt alanı (~5 MB) dolmasın diye en yeni 40 nokta tutulur, eskiler silinir.
-const WX_MAX = 40;
+// Küçük kayıt alanı (~5 MB) dolmasın diye en yeni 24 nokta tutulur, eskiler silinir.
+const WX_MAX = 24;
 function wxIndex() { try { return JSON.parse(localStorage.getItem('wx2idx') || '{}'); } catch { return {}; } }
 function wxSave(k, data) {
   const idx = wxIndex();

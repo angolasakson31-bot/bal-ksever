@@ -1,5 +1,5 @@
 // Çevrimdışı çalışma: uygulama dosyalarını önbelleğe al.
-const VERSION = 'rastgele-v80';
+const VERSION = 'rastgele-v81';
 const TILES = 'tiles2'; // eski 'tiles' önbelleği (sınırsız büyüyordu) silinir
 const TILE_MAX = 1500;
 const CORE = [
