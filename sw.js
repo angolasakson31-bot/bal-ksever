@@ -1,5 +1,5 @@
 // Çevrimdışı çalışma: uygulama dosyalarını önbelleğe al.
-const VERSION = 'rastgele-v82';
+const VERSION = 'rastgele-v83';
 const TILES = 'tiles2'; // eski 'tiles' önbelleği (sınırsız büyüyordu) silinir
 const TILE_MAX = 1500;
 const CORE = [
@@ -57,7 +57,9 @@ self.addEventListener('fetch', e => {
   e.respondWith(new Promise(resolve => {
     let done = false;
     const finish = r => { if (!done && r) { done = true; resolve(r); } };
-    const t = setTimeout(() => cached().then(finish), 4000);
+    // Zaman aşımı yalnız sayfa açılışında: betik/stil dosyaları ağdan gelir, yalnız ağ hatasında kayıtlıdan
+    // (yoksa yavaş ağda eski ve yeni dosyalar karışır, uygulama boş açılır)
+    const t = e.request.mode === 'navigate' ? setTimeout(() => cached().then(finish), 4000) : null;
     net.then(r => { clearTimeout(t); finish(r); })
       .catch(() => { clearTimeout(t); cached().then(r => { finish(r); if (!done) { done = true; resolve(Response.error()); } }); });
   }));

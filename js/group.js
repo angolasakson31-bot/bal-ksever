@@ -226,14 +226,15 @@ const STORE_OK = new Set(['spots', 'catches']);
 async function pull() {
   const meta = (await db.get('meta', 'since')) || { k: 'since', v: 0 };
   const first = !meta.v;
-  const pendingKeys = new Set((await db.getAll('outbox')).filter(q => !q.failed).map(q => q.k));
   const fresh = [];
   let since = meta.v, after = '', more = true, changed = false;
   while (more) {
     const r = await api(`/api/g/${group.code}/changes?since=${since}${after ? `&after=${encodeURIComponent(after)}` : ''}`);
     for (const it of r.items) {
       if (!STORE_OK.has(it.store) || !it.id) continue;
-      if (pendingKeys.has(`${it.store}:${it.id}`)) continue; // telefondaki yeni hali gönderilmeyi bekliyor
+      // Telefondaki yeni hali gönderilmeyi bekliyor (o an bakılır: eşitleme sürerken yapılan düzenleme ezilmesin)
+      const q = await db.get('outbox', `${it.store}:${it.id}`);
+      if (q && !q.failed) continue;
       if (it.deleted) {
         const old = await db.get(it.store, it.id);
         if (old) { changed = true; await db.toTrash(it.store, old, it.by); await db.remove(it.store, it.id, { silent: true }); }
@@ -245,9 +246,14 @@ async function pull() {
       const doc = cleanDoc(it.store, { ...it.doc, id: it.id, by: it.createdBy || it.by, editedBy: it.by, updatedAt: it.updatedAt });
       if (!doc) continue;
       if (local?.photo && doc.photoUrl === local.photoUrl) doc.photo = local.photo; // fotoğraf dosyası telefonda dursun
-      if (Array.isArray(doc.photos) && Array.isArray(local?.photos)) {
+      if (Array.isArray(local?.photos)) {
+        doc.photos ??= [];
         const mine = new Map(local.photos.filter(p => p.blob).map(p => [p.id, p]));
         doc.photos = doc.photos.map(p => (mine.get(p.id)?.url === p.url ? { ...p, blob: mine.get(p.id).blob } : p));
+        // Yüklenemeyen (yalnız bu telefonda duran) fotoğraflar silinmesin
+        const keep = local.photos.filter(p => p.blob && !p.url && !doc.photos.some(d => d.id === p.id));
+        if (keep.length) doc.photos = [...doc.photos, ...keep].slice(0, 6);
+        if (!doc.photo && doc.photos[0]?.blob) doc.photo = doc.photos[0].blob;
       }
       await db.put(it.store, doc, { silent: true });
       changed = true;

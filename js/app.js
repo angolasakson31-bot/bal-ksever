@@ -288,9 +288,10 @@ function openCatchDialog(c = null, preset = {}) {
   $('#catch-weight').value = c?.weight ?? '';
   $('#catch-count').value = c?.count ?? 1;
   $('#catch-date').value = toLocalInput(c ? new Date(c.date) : new Date());
-  $('#catch-bait').value = c?.bait || ls('lastBait') || '';
-  $('#catch-method').value = c?.method || ls('lastMethod') || '';
-  fillSpotSelect($('#catch-spot'), c?.spotId ?? preset.spotId ?? ls('lastSpot') ?? '');
+  // Son kullanılan yem/yöntem/mera yalnız YENİ avda önerilir (düzenlemede kaydın kendi değeri kalır)
+  $('#catch-bait').value = c ? c.bait || '' : ls('lastBait') || '';
+  $('#catch-method').value = c ? c.method || '' : ls('lastMethod') || '';
+  fillSpotSelect($('#catch-spot'), c ? c.spotId || '' : preset.spotId ?? ls('lastSpot') ?? '');
   $('#catch-released').checked = !!c?.released;
   $('#catch-notes').value = c?.notes || '';
   $('#catch-delete').hidden = !c;
@@ -832,7 +833,8 @@ function miniWx(a, from, hours = 24) {
   for (let k = 0; k < hours; k++) {
     // Tam saatte ayrıntıdaki saatlik listeyle aynı satır (aynı saat iki yerde farklı puan göstermesin)
     const t = new Date(from.getTime() + k * 3600e3);
-    const r = (t.getMinutes() === 0 && a.rows.find(x => x.date.getTime() === t.getTime())) || rowAt(a, t);
+    // İlk hücre kartın kendi anı (büyük puanla aynı); sonrakiler ayrıntıdaki saatlik listeyle aynı satır
+    const r = (k > 0 && t.getMinutes() === 0 && a.rows.find(x => x.date.getTime() === t.getTime())) || rowAt(a, t);
     if (!r) break;
     const newDay = k > 0 && r.date.getHours() === 0;
     const sv = modeVal(r); // o saatin balık puanı (seçili puan türüne göre)
@@ -969,7 +971,8 @@ async function renderRankNow(force = false) {
     bad.map(x => `<div class="rank-item bad"><b>${esc((x.a?.place || x.place).name)}</b><p class="warn">${esc(x.err?.message || 'Bu zaman için tahmin yok (en fazla 7 gün ileri).')}</p></div>`).join('');
   $('#when-label').textContent = WHEN_SHORT[rankWhen] + (rankWater !== 'all' ? ` · ${WATER_FILTER[rankWater]}` : '') + (combo ? ' · 💨' : '');
   $('.map-bar').classList.toggle('offline', offline);
-  $('#rank-refresh').title = `Yenile · son güncelleme ${fmtTime(Math.min(...results.filter(x => x.a).map(x => x.a.cond.fetchedAt)))}${offline ? ' (çevrimdışı)' : ''}`;
+  const times = results.filter(x => x.a).map(x => x.a.cond.fetchedAt);
+  $('#rank-refresh').title = times.length ? `Yenile · son güncelleme ${fmtTime(Math.min(...times))}${offline ? ' (çevrimdışı)' : ''}` : 'Yenile';
   renderDots();
   if (!$('#here-card').hidden && state.hereA) toggleHereCard(true);
   // Önceki seçili kart duruyorsa ona dön, yoksa ilk kart
@@ -1444,7 +1447,7 @@ function renderDetail() {
     <div class="card score-card">${windBadge(sel)}
       <div class="score-ring" style="border-color:${scoreColor(ringV)}">${fmt(ringV, 1)}<small>/ 10</small><small class="ring-kind">${combo ? '🎣💨' : '🎣'}</small></div>
       <div class="score-text"><strong>${scoreLabel(ringV, sel.danger)}</strong>
-        <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${hh(sel.date)}${isNow ? ' · şu an' : ''}</div>
+        <div class="muted">${sel.date.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })} ${slotLabel(sel)}${isNow ? ' · şu an' : ''}</div>
         <ul>${sel.reasons.map(([v, t]) => `<li>${v > 0 ? '＋' : '－'} ${esc(t)}</li>`).join('')}</ul>
         ${sel.windScore != null ? `<p class="wind-line">💨 Rüzgar puanı <b>${fmt(sel.windScore, 1)}</b>: ${esc(windName(sel.windDir, true))} ${fmt(sel.wind)} km/s · ${esc(sel.windNotes.join(' · '))}</p>
         ${combo ? `<p class="wind-line">🎣💨 Halkadaki puan: <b>balık + rüzgar</b>. Rüzgar yönü etkisi: ${(sel.dirNotes || []).length ? esc(sel.dirNotes.map(([v, t]) => `${v > 0 ? '+' : '−'}${Math.abs(v)} ${t}`).join(' · ')) : 'yok'}</p>
@@ -1546,12 +1549,12 @@ async function mapPointPopup(latlng) {
     const pname = nm?.name || 'Seçilen nokta';
     a.place.name = pname;
     const r = rowAt(a, new Date()) || hourAt(a.rows, new Date());
-    const best = a.rows.filter(x => x.date >= new Date() && x.date <= new Date(Date.now() + 864e5)).reduce((b, x) => (!b || x.score > b.score ? x : b), null);
+    const best = bestSafe(a.rows.filter(x => x.date.getTime() + 3600e3 > Date.now() && x.date <= new Date(Date.now() + 864e5)));
     pop.setContent(`<div class="pt-pop">${nm ? `<div class="pt-name">📍 <b>${esc(nm.name)}</b>${nm.area ? `<br><small>${esc(nm.area)}</small>` : ''}</div>` : ''}
-      ${scorePill(r)} <b>${esc(scoreLabel(r.score, r.danger))}</b> ${windBadge(r)}<br>
+      ${scorePill({ ...r, score: modeVal(r) })} <b>${esc(scoreLabel(modeVal(r), r.danger))}</b> ${windBadge(r)}<br>
       <small>${WATER_TYPES[a.type].icon} ${WATER_TYPES[a.type].label}${a.guess ? '' : ' <i>(su tipi bakılıyor…)</i>'} · şu an</small><br>
       <small>${esc(summaryLine(r, a.type))}</small><br>
-      ${best ? `<small>24 saatin en iyisi: <b>${dayShort(best.date)} ${hh(best.date)}</b> (${fmt(best.score, 1)})</small>` : ''}
+      ${best ? `<small>24 saatin en iyisi: <b>${dayShort(best.date)} ${hh(best.date)}</b> (${fmt(modeVal(best), 1)})</small>` : ''}
       <div class="popup-actions"><button data-act="wx-point" data-lat="${latlng.lat}" data-lng="${latlng.lng}" data-name="${esc(pname)}">Ayrıntılı tahmin</button>
       <button data-act="spot-here" data-lat="${latlng.lat}" data-lng="${latlng.lng}" data-name="${esc(nm?.name || '')}">📍 Mera kaydet</button></div></div>`);
   };
@@ -1937,8 +1940,8 @@ async function importBackup(file) {
     const data = JSON.parse(await file.text());
     if (data.app !== 'rastgele') throw new Error('Bu bir Rastgele yedeği değil');
     const msg = grp.group.code
-      ? `⚠️ Şu an GRUP açık (${grp.group.name}).\n\nBu yedekteki ${data.catches.length} av ve ${data.spots.length} mera GRUBA eklenecek ve gruptaki herkes görecek.\n\nKişisel yedeğini kendi kayıtlarına yüklemek istiyorsan önce "👤 Kişisel"e geç.\n\nYine de gruba eklensin mi?`
-      : `${data.catches.length} av ve ${data.spots.length} mera eklensin mi? (Aynı kayıtlar güncellenir)`;
+      ? `⚠️ Şu an GRUP açık (${grp.group.name}).\n\nBu yedekteki ${(data.catches || []).length} av ve ${(data.spots || []).length} mera GRUBA eklenecek ve gruptaki herkes görecek.\n\nKişisel yedeğini kendi kayıtlarına yüklemek istiyorsan önce "👤 Kişisel"e geç.\n\nYine de gruba eklensin mi?`
+      : `${(data.catches || []).length} av ve ${(data.spots || []).length} mera eklensin mi? (Aynı kayıtlar güncellenir)`;
     if (!confirm(msg)) return;
     await importPayload(data);
     renderMore();
@@ -2049,6 +2052,7 @@ function setupInstallHint() {
 function bindEvents() {
   document.querySelectorAll('.bottom-nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#fab').addEventListener('click', () => openCatchDialog());
+  $('#catch-dialog').addEventListener('close', () => { editKeys.forEach(u => URL.revokeObjectURL(u)); editKeys.clear(); });
   $('#map-catch').addEventListener('click', () => openCatchDialog());
   document.addEventListener('click', e => {
     const v = e.target.closest('img[data-view]');
