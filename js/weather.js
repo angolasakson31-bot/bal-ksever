@@ -216,8 +216,11 @@ export const condKey = (lat, lng, wantSea) => key(lat, lng) + (wantSea ? ':s' : 
 
 // ——— Yağmur ihtimali: çok modelli topluluk tahmini (ensemble) ———
 // Tek tahmin yerine iki modelin tüm senaryoları kullanılır: DWD ICON-EU (40 senaryo, ~7 km) + ECMWF (51 senaryo, 9 km).
-// Bir saatin ihtimali = o saat civarında (±1 saat) en az 0,1 mm (çisenti dahil) yağış gösteren senaryoların oranı.
+// Bir saatin ihtimali = o saat civarındaki 3 saatte (±1 saat) toplam en az 0,25 mm, yani "ölçülebilir" yağış
+// gösteren senaryoların oranı (meteoroloji servislerinin yağış ihtimali tanımı: ≥ 0,01 inç = 0,25 mm).
 // ±1 saat: sağanaklar modellerde çoğu zaman bir saat erken/geç görünür; tam saat aranırsa "yağmaz" denip yağabilir.
+// 0,25 mm: modeller çok hafif, iz düzeyinde yağışı gerçekte olduğundan sık gösterir; 0,1 mm eşiği açık havada bile
+// yüksek ihtimal verdiriyordu.
 // Sonuç telefonda 3 saat saklanır (modeller 3–6 saatte bir güncellenir).
 const ENSEMBLE = 'https://ensemble-api.open-meteo.com/v1/ensemble';
 const RP_TTL = 3 * 3600e3;
@@ -234,7 +237,7 @@ function parseRainEns(j) {
     for (const v of series) {
       if (v[i] == null) continue;
       n++;
-      if (Math.max(v[i], v[i + 1] ?? v[i], v[i - 1] ?? v[i]) >= 0.1) wet++;
+      if ((v[i - 1] ?? 0) + v[i] + (v[i + 1] ?? 0) >= 0.25) wet++;
     }
     return n >= 20 ? Math.round(100 * wet / n) : null;
   });

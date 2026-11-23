@@ -841,7 +841,7 @@ function miniWx(a, from, hours = 24) {
     cells.push(`<span class="mc${newDay ? ' day' : ''}"><span class="mt">${newDay ? dayShort(r.date) : hh(r.date)}</span>` +
       `<span class="ms" style="background:${scoreColor(sv)}" title="Bu saatin balık puanı">${r.danger ? '⚠' : ''}${fmt(sv, 1)}</span><span class="mi" title="${weatherWord(r.code)}">${weatherIcon(r.code, r.isDay)}${(r.rainProb ?? 0) >= 50 && !isRainCode(r.code) ? '<sup class="drop">💧</sup>' : ''}</span>` +
       `<span class="mtp">${fmt(r.temp)}°</span><span class="mw">${arrow(r.windDir)}${fmt(r.wind)}</span>` +
-      `<span class="mr" title="Bu saat civarında (±1 sa) yağmur ihtimali, çisenti dahil">💧${r.rainProb == null ? '—' : fmt(r.rainProb) + '%'}</span></span>`);
+      `<span class="mr" title="Bu saat civarında (±1 sa) yağmur ihtimali">💧${r.rainProb == null ? '—' : fmt(r.rainProb) + '%'}</span></span>`);
   }
   return cells.length ? `<span class="mini-wx${hours <= 6 ? ' fixed' : ''}"${hours > 6 ? ' title="Sola kaydırın: 24 saat"' : ''}>${cells.join('')}</span>${hours > 6 ? '<span class="wx-hint">⟵ 24 saat için kaydır · renkli sayı = balık puanı · 💧 = yağmur ihtimali</span>' : ''}` : '';
 }
@@ -1366,7 +1366,7 @@ function renderDetail() {
         <div class="sc ${scoreClass(modeVal(r))}">${combo ? '🎣💨' : '🎣'} ${fmt(modeVal(r), 1)}</div>
         ${r.danger ? '<div>⚠️</div>' : ''}
       </button>`).join('')}</div>
-      <p class="chart-note">Simge: o saatin <b>en olası</b> havası (🌫️ = sis). Mavi sütun ve 💧%: o saat civarında (±1 saat) <b>yağmur ihtimali, çisenti dahil</b>${cond.rainMembers ? ` (${cond.rainMembers} farklı tahmin senaryosundan kaçında yağdığı: ICON + ECMWF)` : ''}. %10–30: kısa bir serpinti olabilir, %30–60: yağması muhtemel, %60 üstü: büyük ihtimalle yağar. mm: ana tahmindeki miktar. Simge yağmur göstermese de ihtimal yüksekse köşesine 💧 eklenir. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
+      <p class="chart-note">Simge: o saatin <b>en olası</b> havası (🌫️ = sis). Mavi sütun ve 💧%: o saat civarında (±1 saat) <b>ölçülebilir yağmur ihtimali</b>${cond.rainMembers ? ` (${cond.rainMembers} farklı tahmin senaryosundan kaçında yağdığı: ICON + ECMWF)` : ''}. %30 = 10 benzer günün 3'ünde yağar, 7'sinde yağmaz. %20 altı: düşük, %20–50: yağabilir, %50 üstü: büyük ihtimalle yağar. mm: ana tahmindeki miktar. Simge yağmur göstermese de ihtimal yüksekse köşesine 💧 eklenir. Ok: rüzgarın estiği yön, rakam km/s. 🎣: balık skoru. Bir saate dokunarak seçin.</p>
     </div>
 
     <div class="card"><h3>Günün en iyi saatleri <small class="muted">(en yüksek puandan)</small></h3><ul class="best-list">
