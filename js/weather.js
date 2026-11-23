@@ -214,6 +214,66 @@ export async function prefetchConditions(points, { force = false } = {}) {
 }
 export const condKey = (lat, lng, wantSea) => key(lat, lng) + (wantSea ? ':s' : '');
 
+// ——— Yağmur ihtimali: çok modelli topluluk tahmini (ensemble) ———
+// Tek tahmin yerine iki modelin tüm senaryoları kullanılır: DWD ICON-EU (40 senaryo, ~7 km) + ECMWF (51 senaryo, 9 km).
+// Bir saatin ihtimali = o saat civarında (±1 saat) en az 0,1 mm (çisenti dahil) yağış gösteren senaryoların oranı.
+// ±1 saat: sağanaklar modellerde çoğu zaman bir saat erken/geç görünür; tam saat aranırsa "yağmaz" denip yağabilir.
+// Sonuç telefonda 3 saat saklanır (modeller 3–6 saatte bir güncellenir).
+const ENSEMBLE = 'https://ensemble-api.open-meteo.com/v1/ensemble';
+const RP_TTL = 3 * 3600e3;
+const rpMem = new Map();
+const RP_MODELS = ['dwd_icon_eu_eps,ecmwf_ifs_europe_ensemble', 'dwd_icon_eu_eps,ecmwf_ifs025_ensemble', 'dwd_icon_eu_eps'];
+function parseRainEns(j) {
+  const h = j?.hourly;
+  if (!h?.time?.length) return null;
+  const off = Number.isFinite(j.utc_offset_seconds) ? j.utc_offset_seconds : null;
+  const series = Object.keys(h).filter(k => k.startsWith('precipitation') && Array.isArray(h[k])).map(k => h[k]);
+  if (series.length < 20) return null;
+  const p = h.time.map((_, i) => {
+    let n = 0, wet = 0;
+    for (const v of series) {
+      if (v[i] == null) continue;
+      n++;
+      if (Math.max(v[i], v[i + 1] ?? v[i], v[i - 1] ?? v[i]) >= 0.1) wet++;
+    }
+    return n >= 20 ? Math.round(100 * wet / n) : null;
+  });
+  return { t0: localDate(h.time[0], off).getTime(), p, members: series.length, at: Date.now() };
+}
+export async function getRainEns(lat, lng, { force = false } = {}) {
+  const k = 'rp1:' + key(lat, lng);
+  let c = rpMem.get(k);
+  if (!c) { try { c = JSON.parse(localStorage.getItem(k)); } catch { c = null; } }
+  if (!force && c && Date.now() - c.at < RP_TTL) { rpMem.set(k, c); return c; }
+  for (const models of RP_MODELS) {
+    try {
+      const v = parseRainEns(await getJson(`${ENSEMBLE}?latitude=${lat.toFixed(2)}&longitude=${lng.toFixed(2)}&hourly=precipitation&models=${models}&past_days=1&forecast_days=5&timezone=auto`, 1, 12000));
+      if (v) {
+        rpMem.set(k, v);
+        try {
+          localStorage.setItem(k, JSON.stringify(v));
+          const ks = []; for (let i = 0; i < localStorage.length; i++) { const x = localStorage.key(i); if (x?.startsWith('rp1:')) ks.push(x); }
+          if (ks.length > 30) ks.map(x => [x, JSON.parse(localStorage.getItem(x))?.at || 0]).sort((a, b) => a[1] - b[1]).slice(0, ks.length - 30).forEach(([x]) => localStorage.removeItem(x));
+        } catch { /* dolu */ }
+        return v;
+      }
+    } catch (e) { if (!/\(4\d\d\)/.test(e.message)) break; } // ağ hatası: diğer modelleri deneme
+  }
+  return c && Date.now() - c.at < 12 * 3600e3 ? c : null; // eski ama yakın tarihli sonuç
+}
+// Topluluk ihtimalini saatlik satırlara yaz (yoksa hava servisinin kendi ihtimali kalır)
+export function applyRainEns(cond, ens) {
+  if (!ens?.p || cond.rainEnsAt === ens.at) return;
+  for (const r of cond.hours) {
+    if (r.rainProbBase === undefined) r.rainProbBase = r.rainProb;
+    const i = Math.round((r.date.getTime() - ens.t0) / 3600e3);
+    const v = i >= 0 && i < ens.p.length ? ens.p[i] : null;
+    r.rainProb = v ?? r.rainProbBase;
+    r.rainEns = v != null;
+  }
+  cond.rainEnsAt = ens.at; cond.rainMembers = ens.members;
+}
+
 // ——— Son 60 günün günlük hava sıcaklığı (göl/dere suyu sıcaklığı tahmini için) ———
 // Göller havayı haftalarca geriden izler; bu yüzden yalnız son 5 gün yetmez.
 // Ayrı ve küçük bir istek (yalnız günlük en yüksek/en düşük): saatlik veriyi büyütmez.
